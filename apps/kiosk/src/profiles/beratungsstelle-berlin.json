@@ -1,0 +1,35 @@
+{
+  "id": "beratungsstelle-berlin",
+  "name": "Beratungsstelle Berlin – Öffentliches Terminal",
+  "schemaVersion": "1",
+  "tabs": ["map", "rights", "emergency"],
+  "locale": "de",
+  "mapCenter": {
+    "lat": 52.52,
+    "lng": 13.405,
+    "zoom": 11
+  },
+  "inactivityTimeoutSec": 120,
+  "resetBehavior": "map",
+  "allowReporting": false,
+  "emergencyContacts": [
+    {
+      "label": "Rechtsanwaltlicher Notdienst",
+      "phone": "030-12345678",
+      "url": "https://example-beratungsstelle.de"
+    },
+    {
+      "label": "GFF – Gesellschaft für Freiheitsrechte",
+      "phone": "030-98765432",
+      "url": "https://freiheitsrechte.org"
+    },
+    {
+      "label": "RAV – Republikanischer Anwältinnenverein",
+      "url": "https://rav.de"
+    }
+  ],
+  "branding": {
+    "organizationName": "Beratungsstelle Berlin e.V.",
+    "accentColor": "#3b82f6"
+  }
+}

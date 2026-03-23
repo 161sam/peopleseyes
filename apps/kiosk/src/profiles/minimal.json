@@ -1,0 +1,21 @@
+{
+  "id": "minimal",
+  "name": "Minimal – Nur Rechte und Notfallkontakte",
+  "schemaVersion": "1",
+  "tabs": ["rights", "emergency"],
+  "locale": "de",
+  "mapCenter": {
+    "lat": 51.3,
+    "lng": 10.0,
+    "zoom": 6
+  },
+  "inactivityTimeoutSec": 60,
+  "resetBehavior": "rights",
+  "allowReporting": false,
+  "emergencyContacts": [
+    {
+      "label": "Bundesweiter Notfall – GFF",
+      "url": "https://freiheitsrechte.org/notfall"
+    }
+  ]
+}

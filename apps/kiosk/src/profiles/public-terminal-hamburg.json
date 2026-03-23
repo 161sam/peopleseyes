@@ -1,0 +1,30 @@
+{
+  "id": "public-terminal-hamburg",
+  "name": "Öffentliches Terminal Hamburg",
+  "schemaVersion": "1",
+  "tabs": ["map", "report", "rights", "emergency"],
+  "locale": "de",
+  "mapCenter": {
+    "lat": 53.55,
+    "lng": 10.0,
+    "zoom": 12
+  },
+  "inactivityTimeoutSec": 90,
+  "resetBehavior": "home",
+  "allowReporting": true,
+  "emergencyContacts": [
+    {
+      "label": "Flüchtlingsrat Hamburg",
+      "phone": "040-24832 2700",
+      "url": "https://fluechtlingsrat-hamburg.de"
+    },
+    {
+      "label": "Caritasverband Hamburg",
+      "phone": "040-2000 100",
+      "url": "https://caritas-hamburg.de"
+    }
+  ],
+  "branding": {
+    "organizationName": "Netzwerk für Menschenrechte Hamburg"
+  }
+}

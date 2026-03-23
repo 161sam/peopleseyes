@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Kein Zoom auf Touch-Geräten -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <!-- Vollbild-Modus auf iOS wenn als Home-Screen-App installiert -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PE Terminal" />
+    <!-- Kein Caching für das HTML selbst – PWA übernimmt Caching -->
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta name="description" content="PeoplesEyes InfoTerminal" />
+    <!-- Kein Tracking -->
+    <title>PeoplesEyes InfoTerminal</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      /* Verhindert Text-Selektion auf Touch-Screens */
+      * { -webkit-user-select: none; user-select: none; }
+      /* Verhindert Browser-Scroll-Bounce auf iOS */
+      html, body { overscroll-behavior: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

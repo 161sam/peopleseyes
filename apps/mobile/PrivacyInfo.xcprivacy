@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy – iOS Privacy Manifest für PeoplesEyes
+  
+  Pflichtdatei seit iOS 17 / Xcode 15 für alle Apps die bestimmte APIs nutzen.
+  Ort im Xcode-Projekt: PeoplesEyes/PrivacyInfo.xcprivacy
+  
+  Expo-Konfiguration: wird automatisch von expo-build-properties eingebunden
+  wenn dieser Pfad in app.json unter ios.privacyManifests referenziert wird.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Welche APIs werden genutzt die Privacy-relevante Daten zugreifen -->
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <!-- UserDefaults: für lokale Einstellungen (Locale, Auflösung) -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- CA92.1: Read/write preferences from the same app -->
+        <string>CA92.1</string>
+      </array>
+    </dict>
+    <dict>
+      <!-- File Timestamps: expo-file-system für Evidence-Dateien -->
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <!-- C617.1: Display file timestamps to the user -->
+        <string>C617.1</string>
+      </array>
+    </dict>
+  </array>
+
+  <!-- Welche Nutzerdaten werden gesammelt: KEINE -->
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <!--
+    PeoplesEyes sammelt KEINE personenbezogenen Daten:
+    - Kein Nutzer-Account, keine E-Mail, kein Name
+    - Kein Standort-Logging (nur anonymisierte H3-Zellen lokal)
+    - Keine Analytics oder Crash-Reporting an externe Server
+    - Keine Identifikatoren die Geräte über Sessions hinweg verfolgen
+    
+    P2P-Sync überträgt nur:
+    - Anonymisierte H3-Zell-IDs (kein Rückschluss auf Einzelperson möglich)
+    - Aggregierte Zählwerte und Kategorien
+  -->
+
+  <!-- Kein Cross-App / Cross-Website Tracking -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+
+  <!-- Keine Tracking-Domains -->
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+</dict>
+</plist>
