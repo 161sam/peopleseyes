@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -45,10 +49,10 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@peopleseyes/core-model':  '../../packages/core-model/src/index.ts',
-      '@peopleseyes/core-logic':  '../../packages/core-logic/src/index.ts',
-      '@peopleseyes/core-i18n':   '../../packages/core-i18n/src/index.ts',
-      '@peopleseyes/core-crypto':  '../../packages/core-crypto/src/index.ts',
+      '@peopleseyes/core-model': resolve(rootDir, '../../packages/core-model/src/index.ts'),
+      '@peopleseyes/core-logic': resolve(rootDir, '../../packages/core-logic/src/index.ts'),
+      '@peopleseyes/core-i18n': resolve(rootDir, '../../packages/core-i18n/src/index.ts'),
+      '@peopleseyes/core-crypto': resolve(rootDir, '../../packages/core-crypto/src/index.ts'),
     },
   },
   define: { global: 'globalThis' },
