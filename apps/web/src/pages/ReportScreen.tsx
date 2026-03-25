@@ -8,13 +8,15 @@
  */
 import React, { useState } from 'react';
 import {
-  AuthorityCategory, AuthorityVisibility,
+  AuthorityVisibility,
   ObservedActivityType, ObservationConfidence, H3Resolution,
 } from '@peopleseyes/core-model';
+import type { AuthorityCategory } from '@peopleseyes/core-model';
 import { createReport } from '@peopleseyes/core-logic';
 import { useReports } from '../hooks/useReports.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
+import { AuthorityPicker } from '../components/AuthorityPicker.js';
 import type { GeoProps } from '../App.js';
 
 interface ReportScreenProps {
@@ -42,12 +44,28 @@ const INITIAL_FORM: FormState = {
 
 const STEPS: Step[] = ['authority', 'visibility', 'activity', 'confidence', 'description', 'confirm'];
 
-/** Menschenlesbare Labels für AuthorityVisibility (DE) */
+/** Menschenlesbare Labels für AuthorityVisibility */
 const VISIBILITY_LABELS: Record<AuthorityVisibility, string> = {
   [AuthorityVisibility.EindeutigErkennbar]: 'Eindeutig erkennbar (Uniform / Fahrzeug)',
   [AuthorityVisibility.Zivil]: 'Zivil gekleidet, aber identifizierbar',
   [AuthorityVisibility.Unklar]: 'Nicht sicher zuzuordnen',
 };
+
+/** Aktivitäten in Gruppen aufteilen für visuelle Darstellung */
+const ACTIVITY_GROUPS = {
+  control: [
+    ObservedActivityType.Identitaetskontrolle,
+    ObservedActivityType.StationaereKontrolle,
+    ObservedActivityType.Fahrzeugkontrolle,
+  ],
+  operation: [
+    ObservedActivityType.Patrouille,
+    ObservedActivityType.Zugriff,
+    ObservedActivityType.Transport,
+    ObservedActivityType.DurchsuchungGebaeude,
+    ObservedActivityType.Sonstiges,
+  ],
+} as const;
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
@@ -173,23 +191,19 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, onSubmitSuccess }
 
       <div className="flex-1 space-y-2">
 
-        {/* Schritt 1: Behörde */}
+        {/* Schritt 1: Behörde – zweistufige Auswahl */}
         {step === 'authority' && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-300 mb-3">{t.report.step.authority}</p>
-            {Object.values(AuthorityCategory).map(cat => (
-              <OptionButton
-                key={cat}
-                value={cat}
-                label={t.authority[cat]}
-                selected={form.authority === cat}
-                onSelect={v => setForm(f => ({ ...f, authority: v }))}
-              />
-            ))}
+            <AuthorityPicker
+              selected={form.authority}
+              onSelect={v => setForm(f => ({ ...f, authority: v }))}
+              t={t}
+            />
           </div>
         )}
 
-        {/* Schritt 2: Erkennbarkeit (Fehler 3 fix) */}
+        {/* Schritt 2: Erkennbarkeit */}
         {step === 'visibility' && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-300 mb-3">Wie erkennbar war die Behörde?</p>
@@ -205,11 +219,28 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, onSubmitSuccess }
           </div>
         )}
 
-        {/* Schritt 3: Aktivität */}
+        {/* Schritt 3: Aktivität – mit visuellen Gruppen */}
         {step === 'activity' && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-300 mb-3">{t.report.step.activity}</p>
-            {Object.values(ObservedActivityType).map(act => (
+
+            <p className="text-xs text-slate-500 uppercase tracking-wide px-1 mt-2">
+              {t.report.activityGroupControl}
+            </p>
+            {ACTIVITY_GROUPS.control.map(act => (
+              <OptionButton
+                key={act}
+                value={act}
+                label={t.activity[act]}
+                selected={form.activity === act}
+                onSelect={v => setForm(f => ({ ...f, activity: v }))}
+              />
+            ))}
+
+            <p className="text-xs text-slate-500 uppercase tracking-wide px-1 mt-3">
+              {t.report.activityGroupOperation}
+            </p>
+            {ACTIVITY_GROUPS.operation.map(act => (
               <OptionButton
                 key={act}
                 value={act}

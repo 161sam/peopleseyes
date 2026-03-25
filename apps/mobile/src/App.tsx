@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { I18nManager, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -6,7 +6,9 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Text } from 'react-native';
 import * as Updates from 'expo-updates';
-import { isRtlLocale, detectLocale } from '@peopleseyes/core-i18n';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isRtlLocale, detectLocale, getTranslations } from '@peopleseyes/core-i18n';
+import type { SupportedLocale } from '@peopleseyes/core-model';
 import { requestNotificationPermission } from './services/notification-service.js';
 
 /**
@@ -46,10 +48,19 @@ const DARK = {
 };
 
 export default function App() {
+  const [locale, setLocale] = useState<SupportedLocale>('de');
+
   useEffect(() => {
     // Notification-Berechtigung sanft anfragen (kein Blocker)
     void requestNotificationPermission();
+
+    // Locale aus AsyncStorage laden (gleicher Key wie useSettings in screens.tsx)
+    void AsyncStorage.getItem('pe:locale').then(stored => {
+      if (stored) setLocale(stored as SupportedLocale);
+    }).catch(() => {/* Defaults behalten */});
   }, []);
+
+  const t = getTranslations(locale);
 
   return (
     <SafeAreaProvider>
@@ -65,29 +76,44 @@ export default function App() {
           }}
         >
           <Tab.Screen
-            name="Karte"
+            name="Map"
             component={MapScreen}
-            options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🗺</Text> }}
+            options={{
+              tabBarLabel: t.nav.map,
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🗺</Text>,
+            }}
           />
           <Tab.Screen
-            name="Melden"
+            name="Report"
             component={ReportScreen}
-            options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📍</Text> }}
+            options={{
+              tabBarLabel: t.nav.report,
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📍</Text>,
+            }}
           />
           <Tab.Screen
-            name="Rechte"
+            name="Rights"
             component={RightsScreen}
-            options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚖️</Text> }}
+            options={{
+              tabBarLabel: t.nav.rights,
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚖️</Text>,
+            }}
           />
           <Tab.Screen
-            name="Beweise"
+            name="Evidence"
             component={EvidenceScreen}
-            options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🎥</Text> }}
+            options={{
+              tabBarLabel: t.nav.evidence,
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🎥</Text>,
+            }}
           />
           <Tab.Screen
-            name="Einstellungen"
+            name="Settings"
             component={SettingsScreen}
-            options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙️</Text> }}
+            options={{
+              tabBarLabel: t.nav.settings,
+              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⚙️</Text>,
+            }}
           />
         </Tab.Navigator>
       </NavigationContainer>

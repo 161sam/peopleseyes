@@ -1,282 +1,82 @@
 # PeoplesEyes
 
-Zivilgesellschaftliches Crowdsourcing-Tool zur anonymen Dokumentation von Behördenaktivitäten in EU/Deutschland.
-
-Inspiriert von [Firewatch](https://github.com/severian42/Firewatch) und [ICEOUT](https://iceout.org) – von Grund auf neu entwickelt für den EU/D-Kontext mit Privacy-by-Design und Local-first-Architektur.
+PeoplesEyes ist eine App, mit der Menschen Begegnungen mit Polizei und Behörden anonym melden und auf einer Karte sehen können. So entsteht ein gemeinsames Bild dessen, was im öffentlichen Raum passiert – transparent, sicher und ohne Registrierung. Die App klärt außerdem über Rechte bei Kontrollen auf – auch offline.
 
 ---
 
-## Ziel
+## So funktioniert es
 
-PeoplesEyes ermöglicht es Menschen, Sichtungen von Behördeneinsätzen (Bundespolizei, Landespolizei, Ausländerbehörden, Frontex) anonym zu melden, auf einer Karte zu sehen und ihre Rechte offline abzurufen.
+**1. Sehen**
+Öffne die Karte und sieh, wo in deiner Nähe Begegnungen mit Behörden gemeldet wurden – Bundespolizei, Landespolizei, Ausländerbehörden oder Frontex.
 
-**Was PeoplesEyes nicht ist:**
-- Kein Aufruf zu Blockaden oder Behinderung von Behörden
-- Kein Tool zum Doxing von Einzelpersonen
-- Kein Ersatz für anwaltliche Beratung
+**2. Melden**
+Du siehst etwas? Tippe auf „Melden", wähle Behörde, Aktivität und deine Einschätzung aus – fertig. Kein Account, kein Name, keine Registrierung.
+
+**3. Informieren**
+Im Bereich „Rechte" findest du verständlich formulierte Informationen zu deinen Rechten bei Kontrollen, Festnahmen und Durchsuchungen – auch ohne Internetverbindung.
 
 ---
 
-## Architektur
+## Privatsphäre
 
-```
-peopleseyes/
-├── packages/
-│   ├── core-model/     # TypeScript-Interfaces, Enums, Datenmodell, Abuse-Typen
-│   ├── core-logic/     # Algorithmen: H3-Geo, Consensus, Scoring, Abuse-Penalty
-│   ├── core-i18n/      # Übersetzungen: DE, EN, TR, UK, AR, FA (inkl. RTL)
-│   └── core-crypto/    # Ephemere Keypairs (ECDSA P-256), EXIF-Stripping
-├── apps/
-│   ├── web/            # React 18 + Vite + MapLibre + GUN.js PWA
-│   ├── mobile/         # React Native / Expo (Android + iOS)
-│   └── kiosk/          # React PWA im Kiosk-Modus für InfoTerminals
-└── turbo.json          # Turborepo Build-Pipeline
-```
+- **Kein Account, keine Identität** – die App kennt dich nicht
+- **Kein genauer Standort** – dein GPS-Punkt wird automatisch auf einen Bereich von ca. 5 km² gerundet, bevor er das Gerät verlässt
+- **Keine persönlichen Daten** – weder Name, Telefonnummer noch Gerätekennzeichnung werden gespeichert
+- **Kein zentraler Server** – Meldungen werden direkt zwischen Geräten geteilt
+- **Fotos ohne Metadaten** – alle Standort- und Gerätedaten werden automatisch aus Bildern entfernt
+- **Panik-Funktion** – alle lokalen Daten können mit wenigen Tippern sofort gelöscht werden
 
-### Datenprinzipien
+---
 
-| Prinzip | Umsetzung |
+## Herunterladen & Nutzen
+
+| Plattform | Link |
 |---|---|
-| Keine Rohdaten außerhalb des Geräts | GPS → H3-Zell-ID lokal; nur anonymisierte `CellId` wird geteilt |
-| Kein Account, keine Identität | Ephemere Peer-ID, bei jedem App-Start neu generiert |
-| Kein zentraler Server | P2P-Sync via GUN.js, dezentrale Relay-Bootstrap |
-| Keine Analytics | Kein Tracking, kein Crash-Reporting an externe Server |
-| EXIF-frei | Web: Canvas-Reprojection · Mobile: `expo-image-manipulator` Re-Encode |
+| **Browser (PWA)** | [peopleseyes.app](https://peopleseyes.app) – direkt im Browser nutzen oder als App installieren |
+| **Android** | Google Play Store (bald verfügbar) |
+| **iPhone** | App Store (bald verfügbar) |
+
+Die Web-App funktioniert auf jedem Smartphone und kann wie eine normale App installiert werden – ohne App Store.
 
 ---
 
-## Setup
+## Unterstützte Sprachen
 
-```bash
-# Voraussetzungen: Node >= 20, pnpm >= 9
-corepack enable
+Deutsch · English · Türkçe · Українська · العربية · فارسی · Français · Español · Polski · Română · Srpski · Shqip · Bosanski · Soomaali · አማርኛ · ትግርኛ · پښتو · Kurdî · Русский · Kiswahili
 
-git clone https://github.com/<org>/peopleseyes.git
-cd peopleseyes
-
-pnpm install
-pnpm build        # alle packages kompilieren
-pnpm dev          # alle apps im Watch-Modus starten
-```
-
-### Web-App starten
-
-```bash
-cd apps/web
-pnpm dev
-# → http://localhost:5173
-```
-
-### Android-App starten
-
-```bash
-cd apps/mobile
-pnpm android      # Android Studio + Emulator oder echtes Gerät erforderlich
-```
-
-### iOS-App starten
-
-```bash
-cd apps/mobile
-pnpm ios          # Xcode 15+ + macOS erforderlich
-```
-
-### Kiosk-Terminal starten
-
-```bash
-cd apps/kiosk
-pnpm dev
-# → http://localhost:5174?profile=beratungsstelle-berlin
-```
+Die App erkennt die Gerätesprache automatisch. In den Einstellungen kann jederzeit eine andere Sprache gewählt werden.
 
 ---
 
-## Pakete
+## Für Beratungsstellen und Organisationen
 
-### `@peopleseyes/core-model`
+PeoplesEyes kann als Informationsterminal in Beratungsstellen, Unterkünften und öffentlichen Einrichtungen betrieben werden. Der Kiosk-Modus zeigt nur die Inhalte, die vor Ort relevant sind – ohne Ablenkung, ohne App-Store-Installation.
 
-Alle Typen, Interfaces und Enums. Keine Logik, keine externen Abhängigkeiten.
-
-Zentrale Typen:
-- `Report` – eine Sichtungsmeldung (immutable nach Erstellung)
-- `CellAggregate` – aggregierte Zelldaten für die Kartenansicht
-- `AuthorityCategory` – Enum der EU/D-Behörden (14 Kategorien)
-- `ObservedActivityType` – Enum der beobachtbaren Aktivitäten (8 Typen)
-- `AbuseFlag` / `AbuseReason` – Flagging verdächtiger Meldungen
-- `UserSettings` – lokale Nutzereinstellungen (Locale, Auflösung, AppMode)
-- `AnonymizedPosition` – H3-Zell-ID + Stunden-Timestamp, nie Rohdaten
-
-### `@peopleseyes/core-logic`
-
-Algorithmen ohne Browser- oder Native-Abhängigkeiten. Läuft in Web, Mobile und Tests identisch.
-
-- `anonymizePosition(lat, lng, resolution)` – GPS → H3-Zell-ID (h3-js, Resolution 7 ≈ 5 km²)
-- `getCellBoundary(cellId)` – H3-Zell-Polygon für MapLibre / react-native-maps
-- `aggregateReportsForCell(cellId, reports)` – berechnet `CellAggregate` mit 2h-Zeitfenster
-- `computeAggregateScore(reports)` – Confidence-Score 0–1 aus Anzahl + Kategorien-Übereinstimmung
-- `isLikelySpam(report, existing)` – heuristischer Rate-Limit-Filter (max. 10/Zelle/Stunde)
-- `deduplicateReports(reports)` – P2P-Deduplizierung per ID
-- `createReport(draft)` – Factory mit Validierung, erzeugt immutables Report-Objekt
-- `validateReport(unknown)` – Type Guard für P2P-Empfang
-- `computeAbusePenalty(reportId, flags)` – Abuse-Penalty 0–1 für Score-Absenkung
-- `createAbuseFlag(reportId, reason, cellId)` – Factory für AbuseFlag
-
-### `@peopleseyes/core-i18n`
-
-Vollständig typisierte Übersetzungen mit RTL-Erkennung. Alle 6 Locales aktiv.
-
-```typescript
-import { getTranslations, isRtlLocale } from '@peopleseyes/core-i18n';
-
-const t = getTranslations('de');
-console.log(t.rights.topics.silence.title); // "Schweigerecht"
-
-isRtlLocale('ar'); // true
-isRtlLocale('de'); // false
-```
-
-Unterstützte Locales: `de` · `en` · `tr` · `uk` · `ar` · `fa`
-
-RTL-Sprachen (automatisches `dir="rtl"` im Web, `I18nManager.forceRTL()` in React Native): `ar`, `fa`
-
-### `@peopleseyes/core-crypto`
-
-Ausschließlich Web Crypto API – kein externer Krypto-Code, vollständig auditierbar.
-
-- `generateEphemeralKeypair()` – ECDSA P-256, ephemer (kein Persist)
-- `signMessage(msg, privateKey)` – Signiert P2P-Nachrichten
-- `verifySignature(msg, sig, pubKey)` – Verifiziert empfangene Nachrichten
-- `sha256(input)` – Hashing für Deduplizierung und Nachrichts-IDs
-- `stripExifFromImage(blob)` – Web: Canvas-Reprojection entfernt GPS + Gerätedaten
+Interesse? Schreib uns: [kontakt@peopleseyes.app](mailto:kontakt@peopleseyes.app)
 
 ---
 
-## Apps
+## Mitmachen
 
-### `apps/web` – React PWA
+PeoplesEyes lebt von Beiträgen. Du kannst helfen mit:
 
-React 18 + TypeScript + Vite + TailwindCSS. Läuft im Browser und ist als PWA installierbar.
+- **Übersetzungen** – Sprachversionen prüfen oder neue hinzufügen
+- **Rechtstexte** – juristische Inhalte für weitere EU-Länder ergänzen oder prüfen lassen
+- **Barrierefreiheit** – Screenreader, Kontrast, Tastaturnavigation verbessern
+- **Verbreitung** – die App bekannt machen in Beratungsstellen, Netzwerken, sozialen Medien
 
-Kernfeatures:
-- **MapLibre-GL Karte** mit H3-Hexagon-Overlays, Score-Farbskala und Klick-Details
-- **5-Schritt Report-Formular** (Behörde → Aktivität → Confidence → Beschreibung → Bestätigen)
-- **P2P-Sync via GUN.js** – teilt nur anonymisierte `CellAggregate`-Objekte, nie Rohdaten
-- **Viewport-Filterung** – GUN abonniert nur Zellen im sichtbaren Kartenausschnitt
-- **IndexedDB-Store** mit Spam-Filter, Deduplizierung und automatischem Pruning
-- **Rechte-Screen** – alle 5 Rechtsthemen offline verfügbar, vollständig aus `core-i18n`
-- **Settings** – Sprache (6), Meldungs-Auflösung, Evidence-Persistenz
-- **RTL-Support** – `dir="rtl"` bei AR/FA automatisch gesetzt
+Technische Details und Anleitung für Entwicklerinnen: [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-### `apps/mobile` – React Native / Expo (Android + iOS)
-
-Expo Bare Workflow für Android und iOS. Teilt alle `core-*` Pakete mit der Web-App.
-
-Kernfeatures:
-- **SQLite via expo-sqlite** – ersetzt IndexedDB, nativ und performant
-- **Kamera + Audio** via expo-camera / expo-av mit nativer Permission-Verwaltung
-- **EXIF-Strip nativ** via `expo-image-manipulator` Re-Encoding (HEIC → JPEG auf iOS)
-- **Lokale Push-Notifications** – kein FCM/APNs-Server, nur geräteseitig ausgelöst
-- **Viewport-basierter P2P-Sync** mit automatischer Reconnect-Logik
-- **iOS Privacy Manifest** (`PrivacyInfo.xcprivacy`) – Pflichtdatei seit iOS 17
-- **RTL** via `I18nManager.forceRTL()` + automatischer Neustart bei Locale-Wechsel
-- **Locale-Erkennung** via `expo-localization` (kein `navigator.languages`)
-
-App Store Submission Checklist: `apps/mobile/APPSTORE_CHECKLIST.md`
-
-### `apps/kiosk` – InfoTerminal PWA
-
-Eigenständige Vite-App für den öffentlichen Kiosk-Betrieb. PWA mit `display: fullscreen`.
-
-Kernfeatures:
-- **JSON-Profil-System** – Terminal-Verhalten komplett über eine JSON-Datei konfigurierbar
-- **3 Lade-Strategien**: eingebettetes `window.__PE_KIOSK_PROFILE__` → URL-Parameter → Fallback
-- **Inaktivitäts-Timer** mit konfigurierbarem Countdown-Overlay (10s Vorwarnung)
-- **Nur erlaubte Tabs** – pro Profil konfigurierbar: `map`, `rights`, `report`, `emergency`
-- **Notfallkontakte-Screen** mit Tel-Links, profil-definiert
-- **Branding** – Organisationsname, Accent-Color, Logo-URL pro Profil
-
-Deployment-Anleitung (Chrome, Scalefusion, AirDroid, iOS): `apps/kiosk/DEPLOYMENT.md`
-
-Mitgelieferte Beispielprofile (`apps/kiosk/src/profiles/`):
-- `beratungsstelle-berlin.json` – Beratungsstelle, kein Melden, 2 min Timeout
-- `public-terminal-hamburg.json` – Öffentliches Terminal, Melden erlaubt
-- `minimal.json` – Nur Rechte + Notfall, 60s Timeout
+Bitte keine Echtdaten, Personenangaben oder Behörden-interna in Issues oder Beiträgen.
 
 ---
 
-## Threat Model
+## Rechtlicher Hinweis
 
-### Angreifer-Modell
-
-| Angreifer | Ziel | Gegenmaßnahme |
-|---|---|---|
-| Staatliche Stellen | Meldende Personen identifizieren | Ephemere Peer-IDs, keine Accounts, kein Server |
-| Data Brokers | Bewegungsprofile erstellen | Nur H3-Zellen (~5 km²), kein Raw-GPS je übertragen |
-| Trolle / Sybil-Angriffe | Falschmeldungen fluten | Rate-Limit + Abuse-Scoring + Confidence-Decay |
-| App-Store-Sperren | App unzugänglich machen | PWA unabhängig von Stores installierbar |
-| Netzwerk-Überwachung | Kommunikation beobachten | P2P TLS, Tor-kompatibel (kein WebRTC-Zwang) |
-| Manipulierte P2P-Daten | Falsche Aggregate einschleusen | `validateReport()` Type Guard + Timestamp-Plausibilität |
-
-### Nicht-Ziele (bewusste Entscheidungen)
-
-- Keine Ende-zu-Ende-verschlüsselten privaten Nachrichten zwischen Nutzern
-- Keine Anonymität gegenüber dem eigenen Gerät (nur gegenüber Dritten und Servern)
-
----
-
-## Rechtliche Hinweise
-
-PeoplesEyes ist ein Informations- und Dokumentationswerkzeug.
-
-- Falschmeldungen können nach §§ 185 ff. StGB strafbar sein
-- Das Filmen von Behördeneinsätzen ist im öffentlichen Raum grundsätzlich erlaubt (Art. 5 GG)
-- DSGVO-Compliance: Keine personenbezogenen Daten werden verarbeitet oder an Server übertragen
-- Für rechtliche Beratung und Prüfung: [GFF](https://freiheitsrechte.org) · [RAV](https://rav.de) · [Digitalcourage](https://digitalcourage.de)
-
----
-
-## Vor dem ersten öffentlichen Release
-
-- [ ] Juristischer Kurzcheck der Rechtstexte (GFF / RAV)
-- [ ] Security Audit: `core-crypto` + P2P-Protokoll durch externe Person
-- [ ] Selbst gehosteter GUN-Relay-Server statt öffentlicher Bootstrap-Relays
-- [ ] Privacy Policy Seite (für App Store Pflicht)
-- [ ] Closed Beta mit vertrauenswürdigen NGOs und Beratungsstellen
-- [ ] Crash-Monitoring ohne personenbezogene Daten (z.B. Sentry anonymous mode)
-
----
-
-## Beitragen
-
-Beiträge willkommen – besonders:
-
-- **Rechtstexte** – juristische Prüfung und Ergänzung für weitere EU-Länder (AT, CH, FR, NL …)
-- **Security Review** – P2P-Protokoll, Crypto-Code, Threat-Model-Erweiterung
-- **Accessibility** – Screen Reader, Kontrast, Tastaturnavigation
-- **Weitere Sprachen** – über `SupportedLocale` in `core-model/src/settings.ts` erweiterbar
-- **Kiosk-Profile** – neue Beispielprofile für verschiedene Beratungsstellen und Orte
-
-Bitte keine Echtkoordinaten, Personendaten oder Behörden-Interna in Issues oder PRs.
-
----
-
-## Roadmap
-
-| Phase | Inhalt | Status |
-|---|---|---|
-| **1** | Monorepo · core-model · core-logic · core-i18n · core-crypto | ✅ Abgeschlossen |
-| **2** | Web-App: MapLibre-Karte · Report-Formular · P2P-Sync (GUN.js) · Settings · Rights | ✅ Abgeschlossen |
-| **3** | Android: React Native / Expo · Kamera · EXIF-Strip nativ · SQLite · Notifications | ✅ Abgeschlossen |
-| **4** | 6 Locales (DE/EN/TR/UK/AR/FA) · RTL-Support · Abuse-Reporting · P2P-Viewport-Filter | ✅ Abgeschlossen |
-| **5** | Kiosk-Plugin · JSON-Profile · Inaktivitäts-Timer · MDM-Deployment-Doku | ✅ Abgeschlossen |
-| **6** | iOS-Target · RTL (AR/FA) · Privacy Manifest · HEIC · PWA-Fallback · App Store Checklist | ✅ Abgeschlossen |
+PeoplesEyes ist ein Informations- und Dokumentationswerkzeug. Es ruft nicht zu Blockaden oder Behinderungen auf und ersetzt keine anwaltliche Beratung. Falschmeldungen können strafbar sein. Das Filmen im öffentlichen Raum ist grundsätzlich durch die Meinungsfreiheit gedeckt (Art. 5 GG).
 
 ---
 
 ## Lizenz
 
 MIT License – siehe [LICENSE](./LICENSE)
-
----
-
-*"Wer aufhört zu schauen, hört auf zu wissen."*

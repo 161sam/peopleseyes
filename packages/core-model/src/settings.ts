@@ -3,7 +3,10 @@
  * Kein Account, kein Backend, keine Synchronisation dieser Daten.
  */
 
-export type SupportedLocale = 'de' | 'en' | 'tr' | 'ar' | 'uk' | 'fa';
+export type SupportedLocale =
+  | 'de' | 'en' | 'tr' | 'ar' | 'uk' | 'fa'
+  | 'fr' | 'es' | 'pl' | 'ro' | 'sr' | 'sq' | 'bs'
+  | 'so' | 'am' | 'ti' | 'ps' | 'ku' | 'ru' | 'sw';
 
 export enum AppMode {
   /** Vollständige App – Melden + Karte + Info */

@@ -82,12 +82,26 @@ export const EvidenceScreen: React.FC = () => {
 // ─── SettingsScreen ───────────────────────────────────────────────────────────
 
 const LOCALES: Array<{ value: SupportedLocale; label: string; flag: string }> = [
-  { value: 'de', label: 'Deutsch',    flag: '🇩🇪' },
-  { value: 'en', label: 'English',    flag: '🇬🇧' },
-  { value: 'tr', label: 'Türkçe',     flag: '🇹🇷' },
-  { value: 'uk', label: 'Українська', flag: '🇺🇦' },
-  { value: 'ar', label: 'العربية',    flag: '🇸🇦' },
-  { value: 'fa', label: 'فارسی',      flag: '🇮🇷' },
+  { value: 'de', label: 'Deutsch',      flag: '🇩🇪' },
+  { value: 'en', label: 'English',      flag: '🇬🇧' },
+  { value: 'tr', label: 'Türkçe',       flag: '🇹🇷' },
+  { value: 'uk', label: 'Українська',   flag: '🇺🇦' },
+  { value: 'ar', label: 'العربية',      flag: '🇸🇦' },
+  { value: 'fa', label: 'فارسی',        flag: '🇮🇷' },
+  { value: 'fr', label: 'Français',     flag: '🇫🇷' },
+  { value: 'es', label: 'Español',      flag: '🇪🇸' },
+  { value: 'pl', label: 'Polski',       flag: '🇵🇱' },
+  { value: 'ro', label: 'Română',       flag: '🇷🇴' },
+  { value: 'sr', label: 'Srpski',       flag: '🇷🇸' },
+  { value: 'sq', label: 'Shqip',        flag: '🇦🇱' },
+  { value: 'bs', label: 'Bosanski',     flag: '🇧🇦' },
+  { value: 'so', label: 'Soomaali',     flag: '🇸🇴' },
+  { value: 'am', label: 'አማርኛ',         flag: '🇪🇹' },
+  { value: 'ti', label: 'ትግርኛ',         flag: '🇪🇷' },
+  { value: 'ps', label: 'پښتو',         flag: '🇦🇫' },
+  { value: 'ku', label: 'Kurdî',        flag: '🏳' },
+  { value: 'ru', label: 'Русский',      flag: '🇷🇺' },
+  { value: 'sw', label: 'Kiswahili',    flag: '🇹🇿' },
 ];
 
 const RESOLUTION_OPTIONS: Array<{ value: number; labelDe: string }> = [

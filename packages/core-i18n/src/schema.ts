@@ -45,6 +45,14 @@ export interface Translations {
     readonly cancelButton: string;
     readonly successMessage: string;
     readonly legalDisclaimer: string;
+    readonly searchAuthority: string;
+    readonly groupFederal: string;
+    readonly groupState: string;
+    readonly groupImmigration: string;
+    readonly groupFrontex: string;
+    readonly unknownAuthority: string;
+    readonly activityGroupControl: string;
+    readonly activityGroupOperation: string;
   };
 
   readonly authority: Record<AuthorityCategory, string>;

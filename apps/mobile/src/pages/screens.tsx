@@ -5,7 +5,7 @@
  * UI verwendet React Native-Primitives statt HTML/Tailwind.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, StyleSheet, Alert, Switch,
@@ -71,6 +71,62 @@ function useSettings() {
   return { locale, resolution, persistEvidence, setLocale, setResolution, setPersistEvidence, loaded };
 }
 
+// ─── Authority-Gruppen ─────────────────────────────────────────────────────────
+
+type AuthorityGroup = 'federal' | 'state' | 'immigration' | 'frontex';
+
+const GROUP_CATEGORIES: Record<AuthorityGroup, AuthorityCategory[]> = {
+  federal: [
+    AuthorityCategory.BundespolizeiBahn,
+    AuthorityCategory.BundespolizeiFlughafen,
+    AuthorityCategory.BundespolizeiGrenze,
+    AuthorityCategory.BundespolizeiMobil,
+  ],
+  state: [
+    AuthorityCategory.LandespolizeiSchwerpunktkontrolle,
+    AuthorityCategory.LandespolizeiRazzia,
+    AuthorityCategory.LandespolizeiAllgemein,
+  ],
+  immigration: [
+    AuthorityCategory.AuslaenderbehördeUnterkuenfte,
+    AuthorityCategory.AuslaenderbehördeVorführung,
+    AuthorityCategory.AuslaenderbehördeAbschiebung,
+  ],
+  frontex: [
+    AuthorityCategory.FrontexPatrouille,
+    AuthorityCategory.FrontexOperation,
+    AuthorityCategory.GemeinsameBundLand,
+    AuthorityCategory.GemeinsameMitFrontex,
+    AuthorityCategory.Unbekannt,
+  ],
+};
+
+const GROUP_ICONS: Record<AuthorityGroup, string> = {
+  federal: '🚔',
+  state: '🏛️',
+  immigration: '📋',
+  frontex: '🇪🇺',
+};
+
+const GROUPS: AuthorityGroup[] = ['federal', 'state', 'immigration', 'frontex'];
+
+const ACTIVITY_GROUP_CONTROL = [
+  ObservedActivityType.Identitaetskontrolle,
+  ObservedActivityType.StationaereKontrolle,
+  ObservedActivityType.Fahrzeugkontrolle,
+];
+const ACTIVITY_GROUP_OPERATION = [
+  ObservedActivityType.Patrouille,
+  ObservedActivityType.Zugriff,
+  ObservedActivityType.Transport,
+  ObservedActivityType.DurchsuchungGebaeude,
+  ObservedActivityType.Sonstiges,
+];
+
+function normalize(str: string): string {
+  return str.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+}
+
 // ─── ReportScreen ─────────────────────────────────────────────────────────────
 
 type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
@@ -90,11 +146,37 @@ export const ReportScreen: React.FC = () => {
   const { rawCoords } = useNativeLocation();
   const [step, setStep] = useState<Step>('authority');
   const [authority, setAuthority] = useState<AuthorityCategory | null>(null);
+  const [activeGroup, setActiveGroup] = useState<AuthorityGroup | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [visibility, setVisibility] = useState<AuthorityVisibility | null>(null);
   const [activity, setActivity] = useState<ObservedActivityType | null>(null);
   const [confidence, setConfidence] = useState<ObservationConfidence | null>(null);
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const allCategories = useMemo(() => Object.values(AuthorityCategory), []);
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null;
+    const needle = normalize(searchQuery);
+    return allCategories.filter(cat => normalize(t.authority[cat]).includes(needle));
+  }, [searchQuery, allCategories, t]);
+
+  const handleGroupPress = (group: AuthorityGroup) => {
+    const cats = GROUP_CATEGORIES[group];
+    if (cats.length === 1 && cats[0] !== undefined) {
+      setAuthority(cats[0]);
+      goNext();
+    } else {
+      setActiveGroup(prev => (prev === group ? null : group));
+    }
+  };
+
+  const handleAuthoritySelect = (cat: AuthorityCategory) => {
+    setAuthority(cat);
+    setSearchQuery('');
+    setActiveGroup(null);
+    goNext();
+  };
 
   const goNext = () => {
     const idx = STEPS_ORDER.indexOf(step);
@@ -130,6 +212,15 @@ export const ReportScreen: React.FC = () => {
     }
   };
 
+  const groupLabel = (group: AuthorityGroup): string => {
+    switch (group) {
+      case 'federal':    return t.report.groupFederal;
+      case 'state':      return t.report.groupState;
+      case 'immigration': return t.report.groupImmigration;
+      case 'frontex':    return t.report.groupFrontex;
+    }
+  };
+
   if (step === 'success') {
     return (
       <View style={s.center}>
@@ -139,6 +230,7 @@ export const ReportScreen: React.FC = () => {
         <TouchableOpacity style={s.btn} onPress={() => {
           setStep('authority'); setAuthority(null); setVisibility(null);
           setActivity(null); setConfidence(null); setDescription('');
+          setActiveGroup(null); setSearchQuery('');
         }}>
           <Text style={s.btnText}>Neue Meldung</Text>
         </TouchableOpacity>
@@ -146,46 +238,153 @@ export const ReportScreen: React.FC = () => {
     );
   }
 
-  const options = <T extends string>(
-    vals: T[],
-    labels: Record<T, string>,
-    selected: T | null,
-    onSelect: (v: T) => void,
-  ) => vals.map(v => (
-    <TouchableOpacity key={v} style={[s.option, selected === v && s.optionSelected]} onPress={() => onSelect(v)}>
-      <Text style={[s.optionText, selected === v && s.optionTextSelected]}>{labels[v]}</Text>
-    </TouchableOpacity>
-  ));
-
   return (
     <ScrollView style={s.fill} contentContainerStyle={s.container}>
       <Text style={s.h1}>{t.report.title}</Text>
       <Text style={s.subtitle}>{t.report.subtitle}</Text>
 
+      {/* Schritt 1: Behörde – zweistufig mit Suche */}
       {step === 'authority' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.authority}</Text>
-          {options(Object.values(AuthorityCategory), t.authority, authority, v => { setAuthority(v); goNext(); })}
+
+          <TextInput
+            style={s.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t.report.searchAuthority}
+            placeholderTextColor="#475569"
+            returnKeyType="search"
+          />
+
+          {searchResults !== null ? (
+            // Suchergebnisse
+            <>
+              {searchResults.length === 0 ? (
+                <Text style={s.hint}>{t.common.unknown}</Text>
+              ) : (
+                searchResults.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[s.option, authority === cat && s.optionSelected]}
+                    onPress={() => handleAuthoritySelect(cat)}
+                  >
+                    <Text style={[s.optionText, authority === cat && s.optionTextSelected]}>
+                      {t.authority[cat]}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </>
+          ) : (
+            // Gruppen-Kacheln
+            <>
+              <View style={s.groupGrid}>
+                {GROUPS.map(group => (
+                  <TouchableOpacity
+                    key={group}
+                    style={[s.groupTile, activeGroup === group && s.groupTileActive]}
+                    onPress={() => handleGroupPress(group)}
+                  >
+                    <Text style={s.groupIcon}>{GROUP_ICONS[group]}</Text>
+                    <Text style={[s.groupLabel, activeGroup === group && s.groupLabelActive]}>
+                      {groupLabel(group)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Unterkategorien der gewählten Gruppe */}
+              {activeGroup && GROUP_CATEGORIES[activeGroup].map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[s.option, authority === cat && s.optionSelected]}
+                  onPress={() => handleAuthoritySelect(cat)}
+                >
+                  <Text style={[s.optionText, authority === cat && s.optionTextSelected]}>
+                    {t.authority[cat]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {/* Schnellauswahl: Unbekannt */}
+              <TouchableOpacity
+                style={s.unknownBtn}
+                onPress={() => handleAuthoritySelect(AuthorityCategory.Unbekannt)}
+              >
+                <Text style={s.unknownBtnText}>{t.report.unknownAuthority}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </>
       )}
+
+      {/* Schritt 2: Erkennbarkeit */}
       {step === 'visibility' && (
         <>
           <Text style={s.stepLabel}>Wie erkennbar war die Behörde?</Text>
-          {options(Object.values(AuthorityVisibility), VISIBILITY_LABELS, visibility, v => { setVisibility(v); goNext(); })}
+          {Object.values(AuthorityVisibility).map(vis => (
+            <TouchableOpacity
+              key={vis}
+              style={[s.option, visibility === vis && s.optionSelected]}
+              onPress={() => { setVisibility(vis); goNext(); }}
+            >
+              <Text style={[s.optionText, visibility === vis && s.optionTextSelected]}>
+                {VISIBILITY_LABELS[vis]}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </>
       )}
+
+      {/* Schritt 3: Aktivität – mit Gruppen */}
       {step === 'activity' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.activity}</Text>
-          {options(Object.values(ObservedActivityType), t.activity, activity, v => { setActivity(v); goNext(); })}
+
+          <Text style={s.groupHeading}>{t.report.activityGroupControl}</Text>
+          {ACTIVITY_GROUP_CONTROL.map(act => (
+            <TouchableOpacity
+              key={act}
+              style={[s.option, activity === act && s.optionSelected]}
+              onPress={() => { setActivity(act); goNext(); }}
+            >
+              <Text style={[s.optionText, activity === act && s.optionTextSelected]}>{t.activity[act]}</Text>
+            </TouchableOpacity>
+          ))}
+
+          <Text style={[s.groupHeading, { marginTop: 8 }]}>{t.report.activityGroupOperation}</Text>
+          {ACTIVITY_GROUP_OPERATION.map(act => (
+            <TouchableOpacity
+              key={act}
+              style={[s.option, activity === act && s.optionSelected]}
+              onPress={() => { setActivity(act); goNext(); }}
+            >
+              <Text style={[s.optionText, activity === act && s.optionTextSelected]}>{t.activity[act]}</Text>
+            </TouchableOpacity>
+          ))}
         </>
       )}
+
+      {/* Schritt 4: Confidence */}
       {step === 'confidence' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.confidence}</Text>
-          {options(Object.values(ObservationConfidence), t.confidence, confidence, v => { setConfidence(v); goNext(); })}
+          {Object.values(ObservationConfidence).map(conf => (
+            <TouchableOpacity
+              key={conf}
+              style={[s.option, confidence === conf && s.optionSelected]}
+              onPress={() => { setConfidence(conf); goNext(); }}
+            >
+              <Text style={[s.optionText, confidence === conf && s.optionTextSelected]}>
+                {t.confidence[conf]}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </>
       )}
+
+      {/* Schritt 5: Beschreibung */}
       {step === 'description' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.description}</Text>
@@ -204,6 +403,8 @@ export const ReportScreen: React.FC = () => {
           </TouchableOpacity>
         </>
       )}
+
+      {/* Schritt 6: Bestätigen */}
       {step === 'confirm' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.confirm}</Text>
@@ -268,6 +469,29 @@ export const RightsScreen: React.FC = () => {
 
 // ─── SettingsScreen ───────────────────────────────────────────────────────────
 
+const LOCALE_LIST: Array<{ value: SupportedLocale; label: string; flag: string }> = [
+  { value: 'de', label: 'Deutsch',    flag: '🇩🇪' },
+  { value: 'en', label: 'English',    flag: '🇬🇧' },
+  { value: 'tr', label: 'Türkçe',     flag: '🇹🇷' },
+  { value: 'uk', label: 'Укр',        flag: '🇺🇦' },
+  { value: 'ar', label: 'عربي',       flag: '🇸🇦' },
+  { value: 'fa', label: 'فارسی',      flag: '🇮🇷' },
+  { value: 'fr', label: 'Français',   flag: '🇫🇷' },
+  { value: 'es', label: 'Español',    flag: '🇪🇸' },
+  { value: 'pl', label: 'Polski',     flag: '🇵🇱' },
+  { value: 'ro', label: 'Română',     flag: '🇷🇴' },
+  { value: 'sr', label: 'Srpski',     flag: '🇷🇸' },
+  { value: 'sq', label: 'Shqip',      flag: '🇦🇱' },
+  { value: 'bs', label: 'Bosanski',   flag: '🇧🇦' },
+  { value: 'so', label: 'Soomaali',   flag: '🇸🇴' },
+  { value: 'am', label: 'አማርኛ',       flag: '🇪🇹' },
+  { value: 'ti', label: 'ትግርኛ',       flag: '🇪🇷' },
+  { value: 'ps', label: 'پښتو',       flag: '🇦🇫' },
+  { value: 'ku', label: 'Kurdî',      flag: '🏳' },
+  { value: 'ru', label: 'Русский',    flag: '🇷🇺' },
+  { value: 'sw', label: 'Kiswahili',  flag: '🇹🇿' },
+];
+
 export const SettingsScreen: React.FC = () => {
   const { locale, resolution, persistEvidence, setLocale, setResolution, setPersistEvidence } = useSettings();
   const t = getTranslations(locale);
@@ -277,21 +501,15 @@ export const SettingsScreen: React.FC = () => {
       <Text style={s.h1}>{t.settings.title}</Text>
 
       <Text style={s.sectionLabel}>{t.settings.language}</Text>
-      <View style={s.segmented}>
-        {([
-          { value: 'de', label: 'Deutsch' },
-          { value: 'en', label: 'English' },
-          { value: 'tr', label: 'Türkçe' },
-          { value: 'uk', label: 'Укр' },
-          { value: 'ar', label: 'عربي' },
-          { value: 'fa', label: 'فارسی' },
-        ] as { value: SupportedLocale; label: string }[]).map(({ value, label }) => (
+      <View style={s.localeGrid}>
+        {LOCALE_LIST.map(({ value, label, flag }) => (
           <TouchableOpacity
             key={value}
-            style={[s.segment, locale === value && s.segmentActive]}
+            style={[s.localeTile, locale === value && s.localeTileActive]}
             onPress={() => void setLocale(value)}
           >
-            <Text style={[s.segmentText, locale === value && s.segmentTextActive]}>{label}</Text>
+            <Text style={s.localeFlag}>{flag}</Text>
+            <Text style={[s.localeLabel, locale === value && s.localeLabelActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -331,10 +549,20 @@ const s = StyleSheet.create({
   muted: { color: '#64748b', fontSize: 13, textAlign: 'center' },
   stepLabel: { fontSize: 14, fontWeight: '500', color: '#cbd5e1', marginBottom: 12, marginTop: 8 },
   sectionLabel: { fontSize: 12, fontWeight: '500', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 20 },
+  groupHeading: { fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 4, paddingHorizontal: 2 },
   option: { backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155', borderRadius: 10, padding: 14, marginBottom: 8 },
   optionSelected: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)' },
   optionText: { color: '#94a3b8', fontSize: 13 },
   optionTextSelected: { color: '#93c5fd' },
+  searchInput: { backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155', borderRadius: 10, padding: 12, color: '#e2e8f0', fontSize: 13, marginBottom: 12 },
+  groupGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  groupTile: { width: '47%', minHeight: 64, backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155', borderRadius: 12, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 4 },
+  groupTileActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)' },
+  groupIcon: { fontSize: 22 },
+  groupLabel: { color: '#94a3b8', fontSize: 11, textAlign: 'center' },
+  groupLabelActive: { color: '#93c5fd' },
+  unknownBtn: { marginTop: 4, padding: 10, alignItems: 'center' },
+  unknownBtnText: { color: '#475569', fontSize: 12 },
   textInput: { backgroundColor: '#1e293b', borderWidth: 1, borderColor: '#334155', borderRadius: 10, padding: 12, color: '#e2e8f0', fontSize: 13, minHeight: 100, textAlignVertical: 'top', marginBottom: 8 },
   hint: { color: '#475569', fontSize: 11, lineHeight: 16, marginBottom: 12 },
   disclaimer: { color: '#475569', fontSize: 11, lineHeight: 16, marginVertical: 12, backgroundColor: '#1e293b', borderRadius: 10, padding: 12 },
@@ -356,11 +584,12 @@ const s = StyleSheet.create({
   bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   bullet: { color: '#3b82f6', fontSize: 12, marginTop: 2 },
   bulletText: { color: '#64748b', fontSize: 12, lineHeight: 18, flex: 1 },
-  segmented: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  segment: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#334155', borderRadius: 10, alignItems: 'center' },
-  segmentActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)' },
-  segmentText: { color: '#64748b', fontSize: 13 },
-  segmentTextActive: { color: '#93c5fd' },
+  localeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  localeTile: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: '#334155', borderRadius: 10 },
+  localeTileActive: { borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)' },
+  localeFlag: { fontSize: 16 },
+  localeLabel: { color: '#64748b', fontSize: 12 },
+  localeLabelActive: { color: '#93c5fd' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1e293b', borderRadius: 12, padding: 14, marginTop: 8 },
   toggleLabel: { color: '#e2e8f0', fontSize: 14, fontWeight: '500' },
 });
