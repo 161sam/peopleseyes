@@ -1,0 +1,91 @@
+/**
+ * Panic-Button: sofortiges Löschen aller lokalen Daten.
+ *
+ * Aktivierung: 5 schnelle Taps (< 2 Sekunden) auf ein beliebiges Element
+ * das den zurückgegebenen Handler verwendet.
+ *
+ * Löscht:
+ * - IndexedDB 'peopleseyes' (lokale Reports)
+ * - sessionStorage (Offline-Queue, temporäre Daten)
+ * - localStorage (Einstellungen)
+ *
+ * Nach dem Wipe: harter Reload damit React-State und GUN-Instanz
+ * ebenfalls zurückgesetzt werden.
+ */
+
+import { useRef, useCallback, useState } from 'react';
+
+const TAP_WINDOW_MS = 2000;
+const REQUIRED_TAPS = 5;
+
+/**
+ * Löscht alle lokalen Daten des Browsers für PeoplesEyes.
+ * Gibt eine Promise zurück die nach dem Löschen auflöst.
+ */
+async function wipeAllLocalData(): Promise<void> {
+  // 1. SessionStorage
+  try { sessionStorage.clear(); } catch { /* ignorieren */ }
+
+  // 2. localStorage
+  try { localStorage.clear(); } catch { /* ignorieren */ }
+
+  // 3. IndexedDB – alle bekannten Datenbanken
+  const dbsToDelete = ['peopleseyes'];
+  await Promise.allSettled(
+    dbsToDelete.map(
+      name =>
+        new Promise<void>(resolve => {
+          const req = indexedDB.deleteDatabase(name);
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+        }),
+    ),
+  );
+
+  // 4. Cache Storage (Service Worker Caches)
+  try {
+    if ('caches' in globalThis) {
+      const keys = await caches.keys();
+      await Promise.allSettled(keys.map(k => caches.delete(k)));
+    }
+  } catch { /* ignorieren */ }
+}
+
+interface UsePanicWipeReturn {
+  /** An onClick / onTouchStart binden */
+  onTap: () => void;
+  /** Anzahl bisheriger Taps im aktuellen Fenster (für optionale visuelle Rückmeldung) */
+  tapCount: number;
+  /** Wird kurz true bevor der Wipe ausgeführt wird */
+  isWiping: boolean;
+}
+
+export function usePanicWipe(): UsePanicWipeReturn {
+  const tapsRef = useRef<number[]>([]);
+  const [tapCount, setTapCount] = useState(0);
+  const [isWiping, setIsWiping] = useState(false);
+
+  const onTap = useCallback(() => {
+    const now = Date.now();
+    // Alte Taps außerhalb des Zeitfensters entfernen
+    tapsRef.current = tapsRef.current.filter(t => now - t < TAP_WINDOW_MS);
+    tapsRef.current.push(now);
+
+    const count = tapsRef.current.length;
+    setTapCount(count);
+
+    if (count >= REQUIRED_TAPS) {
+      tapsRef.current = [];
+      setTapCount(0);
+      setIsWiping(true);
+
+      void wipeAllLocalData().finally(() => {
+        // Harter Reload – React-State und GUN-Instanz werden zurückgesetzt
+        window.location.reload();
+      });
+    }
+  }, []);
+
+  return { onTap, tapCount, isWiping };
+}

@@ -1,38 +1,28 @@
 /**
- * P2P-Sync via GUN.js
+ * Kiosk P2P-Sync-Service.
  *
- * GUN ist ein dezentrales, peer-to-peer Graph-Datenbank-System.
- * Daten werden zwischen Peers synchronisiert ohne zentralen Server.
+ * Eigenständige Kopie des Web-P2P-Service für den Kiosk,
+ * damit keine cross-app relativen Pfade nötig sind.
  *
- * Privacy-Entscheidungen:
- * - Keine Nutzer-Authentifizierung (kein SEA)
- * - Nur aggregierte Zell-Daten werden geteilt, keine Rohdaten
- * - Reports werden lokal erzeugt und als CellAggregates propagiert
- * - Peer-ID ist ephemer und wird nicht gespeichert
- *
- * Fallback-Relays: Öffentliche GUN-Relays für Bootstrap.
- * In Produktion: selbst gehosteter Relay-Server empfohlen.
+ * CRIT-02 fix: Kiosk abonniert jetzt eingehende CellAggregates
+ * und zeigt sie auf der Karte an.
  */
 
 import type { CellAggregate, SyncStatus, GeoBoundingBox } from '@peopleseyes/core-model';
 import { isCellInBoundingBox, validateCellAggregate } from '@peopleseyes/core-logic';
 
-// GUN hat kein offizielles ESM-Modul – dynamischer Import
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GunInstance = any;
 
-/** Öffentliche Bootstrap-Relays – nur für initialen Peer-Discovery */
 const BOOTSTRAP_RELAYS = [
   'https://gun-manhattan.herokuapp.com/gun',
   'https://peer.wallie.io/gun',
 ];
-
-/** GUN-Namespace für PeoplesEyes – isoliert von anderen Apps */
 const GUN_NAMESPACE = 'peopleseyes_v1_cells';
 
 export type CellUpdateCallback = (aggregate: CellAggregate) => void;
 
-export class P2PSyncService {
+export class KioskP2PSyncService {
   private gun: GunInstance = null;
   private cellsNode: GunInstance = null;
   private status: SyncStatus = {
@@ -42,49 +32,37 @@ export class P2PSyncService {
     pendingReports: 0,
   };
   private listeners = new Set<(status: SyncStatus) => void>();
-  private cellListeners = new Map<string, Set<CellUpdateCallback>>();
+  private globalCallbacks = new Set<CellUpdateCallback>();
   private subscribedCells = new Set<string>();
   private currentViewport: GeoBoundingBox | null = null;
-  private globalCallbacks = new Set<CellUpdateCallback>();
-  /** BUG-05 fix: Guard gegen Mehrfach-Initialisierung */
   private initialized = false;
 
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
     try {
-      // Dynamischer Import – GUN lädt nur wenn benötigt
       const Gun = (await import('gun')).default;
-
-      this.gun = Gun({
-        peers: BOOTSTRAP_RELAYS,
-        localStorage: false,
-        radisk: false,
-      });
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+      this.gun = Gun({ peers: BOOTSTRAP_RELAYS, localStorage: false, radisk: false });
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       this.cellsNode = this.gun.get(GUN_NAMESPACE);
       this.updateStatus({ state: 'syncing', lastSyncAttempt: Date.now() });
 
-      this.gun.on('hi', () => {
-        this.updateStatus({ connectedPeers: this.status.connectedPeers + 1, state: 'idle' });
-      });
-      this.gun.on('bye', () => {
-        this.updateStatus({
-          connectedPeers: Math.max(0, this.status.connectedPeers - 1),
-        });
-      });
-
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      this.gun.on('hi', () =>
+        this.updateStatus({ connectedPeers: this.status.connectedPeers + 1, state: 'idle' }),
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      this.gun.on('bye', () =>
+        this.updateStatus({ connectedPeers: Math.max(0, this.status.connectedPeers - 1) }),
+      );
       this.updateStatus({ state: 'idle' });
     } catch (err) {
-      console.error('P2P init fehlgeschlagen:', err);
+      console.error('Kiosk P2P init fehlgeschlagen:', err);
       this.updateStatus({ state: 'error' });
     }
   }
 
-  /**
-   * Aktualisiert den sichtbaren Kartenausschnitt.
-   * Zellen außerhalb werden nicht mehr aktiv abonniert.
-   */
   setViewport(bbox: GeoBoundingBox): void {
     this.currentViewport = bbox;
     for (const cellId of this.subscribedCells) {
@@ -94,13 +72,8 @@ export class P2PSyncService {
     }
   }
 
-  /**
-   * Veröffentlicht ein CellAggregate an alle Peers.
-   * Nur aggregierte Daten – keine Rohdaten, keine IDs.
-   */
   publishCellAggregate(aggregate: CellAggregate): void {
     if (!this.cellsNode) return;
-
     const payload = {
       cellId: aggregate.cellId,
       reportCount: aggregate.reportCount,
@@ -109,48 +82,25 @@ export class P2PSyncService {
       lastUpdatedHour: aggregate.lastUpdatedHour,
       aggregateScore: aggregate.aggregateScore,
     };
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     this.cellsNode.get(aggregate.cellId).put(payload);
   }
 
-  /**
-   * Abonniert eine Zelle – nur wenn sie im aktuellen Viewport liegt.
-   */
   subscribeToCell(cellId: string): void {
-    if (!this.cellsNode) return;
-    if (this.subscribedCells.has(cellId)) return;
+    if (!this.cellsNode || this.subscribedCells.has(cellId)) return;
     if (this.currentViewport && !isCellInBoundingBox(cellId, this.currentViewport)) return;
 
     this.subscribedCells.add(cellId);
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     this.cellsNode.get(cellId).on((data: unknown) => {
-      // SEC-02 fix: strukturelle Validierung vor dem Akzeptieren von P2P-Daten
       if (!validateCellAggregate(data)) return;
-      const agg = data;
-
-      this.globalCallbacks.forEach(cb => cb(agg));
-      this.cellListeners.get(cellId)?.forEach(cb => cb(agg));
+      this.globalCallbacks.forEach(cb => cb(data));
     });
   }
 
-  /** Registriert einen globalen Callback für alle Zell-Updates */
   onCellUpdate(callback: CellUpdateCallback): () => void {
     this.globalCallbacks.add(callback);
     return () => this.globalCallbacks.delete(callback);
-  }
-
-  /**
-   * Abonniert Updates für eine bestimmte Zelle (Legacy-API für Web).
-   */
-  subscribeToCellUpdates(cellId: string, callback: CellUpdateCallback): () => void {
-    if (!this.cellListeners.has(cellId)) {
-      this.cellListeners.set(cellId, new Set());
-      this.subscribeToCell(cellId);
-    }
-    this.cellListeners.get(cellId)!.add(callback);
-    return () => {
-      this.cellListeners.get(cellId)?.delete(callback);
-    };
   }
 
   onStatusChange(listener: (status: SyncStatus) => void): () => void {
@@ -158,9 +108,7 @@ export class P2PSyncService {
     return () => this.listeners.delete(listener);
   }
 
-  getStatus(): SyncStatus {
-    return this.status;
-  }
+  getStatus(): SyncStatus { return this.status; }
 
   private updateStatus(patch: Partial<SyncStatus>): void {
     this.status = { ...this.status, ...patch };
@@ -168,14 +116,13 @@ export class P2PSyncService {
   }
 
   destroy(): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     this.gun?.off?.();
-    this.cellListeners.clear();
+    this.globalCallbacks.clear();
     this.listeners.clear();
     this.subscribedCells.clear();
-    this.globalCallbacks.clear();
     this.initialized = false;
   }
 }
 
-/** Singleton-Instanz */
-export const p2pSync = new P2PSyncService();
+export const kioskP2pSync = new KioskP2PSyncService();

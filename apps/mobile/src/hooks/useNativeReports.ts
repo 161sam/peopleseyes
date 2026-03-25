@@ -19,6 +19,11 @@ export function useNativeReports(): UseNativeReportsReturn {
 
   useEffect(() => {
     let mounted = true;
+    // HIGH-04 fix: Cleanup-Funktionen außerhalb von init() speichern,
+    // damit der useEffect-Cleanup sie sicher aufrufen kann – unabhängig
+    // davon ob init() bereits abgeschlossen hat oder noch läuft.
+    let unsubCell: (() => void) | null = null;
+    let unsubStatus: (() => void) | null = null;
 
     const init = async () => {
       try {
@@ -28,11 +33,14 @@ export function useNativeReports(): UseNativeReportsReturn {
         if (!mounted) return;
 
         const local = await nativeReportStore.computeAllAggregates();
-        setAggregates(local);
-        setIsLoading(false);
+        if (mounted) {
+          setAggregates(local);
+          setIsLoading(false);
+        }
 
         // P2P-Zell-Updates eingehend mergen
-        const unsubCell = mobileP2pSync.onCellUpdate(incoming => {
+        unsubCell = mobileP2pSync.onCellUpdate(incoming => {
+          if (!mounted) return;
           setAggregates(prev => {
             const idx = prev.findIndex(a => a.cellId === incoming.cellId);
             if (idx === -1) return [...prev, incoming];
@@ -47,13 +55,10 @@ export function useNativeReports(): UseNativeReportsReturn {
         });
 
         // Status-Updates
-        const unsubStatus = mobileP2pSync.onStatusChange(s => {
+        unsubStatus = mobileP2pSync.onStatusChange(s => {
           if (!mounted) return;
           setSyncStatus({ connectedPeers: s.connectedPeers, state: s.state });
         });
-
-        // Cleanup
-        return () => { unsubCell(); unsubStatus(); };
       } catch (err) {
         if (!mounted) return;
         console.error('Init fehlgeschlagen:', err);
@@ -61,10 +66,11 @@ export function useNativeReports(): UseNativeReportsReturn {
       }
     };
 
-    const cleanup = init();
+    void init();
     return () => {
       mounted = false;
-      void cleanup.then(fn => fn?.());
+      unsubCell?.();
+      unsubStatus?.();
     };
   }, []);
 

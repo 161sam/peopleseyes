@@ -9,6 +9,33 @@ interface UseInactivityResetOptions {
 }
 
 /**
+ * Löscht alle lokalen Nutzerdaten, die der Kiosk im Browser hinterlassen hat.
+ *
+ * WARN-03 fix: Beim 'reload'-Reset werden sessionStorage und IndexedDB
+ * geleert, damit ein nachfolgender Nutzer keine Daten des vorherigen sieht.
+ */
+async function clearLocalKioskData(): Promise<void> {
+  try {
+    sessionStorage.clear();
+  } catch {
+    // Fehler beim sessionStorage.clear ignorieren (z.B. SecurityError in
+    // manchen Kiosk-Browserkonfigurationen)
+  }
+
+  try {
+    // IndexedDB 'peopleseyes' löschen – enthält lokale Reports des Nutzers
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase('peopleseyes');
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve(); // Fehler beim Löschen: trotzdem weiter
+      req.onblocked = () => resolve();
+    });
+  } catch {
+    // Fehler beim IDB-Löschen ignorieren – Reload findet trotzdem statt
+  }
+}
+
+/**
  * Überwacht Nutzerinteraktionen und löst nach Inaktivität einen Reset aus.
  *
  * Events die als "aktiv" gewertet werden:
@@ -41,7 +68,11 @@ export function useInactivityReset({
     timerRef.current = setTimeout(() => {
       const target = resolveTarget();
       if (behavior === 'reload') {
-        window.location.reload();
+        // WARN-03 fix: Lokale Daten löschen bevor neu geladen wird,
+        // damit der nächste Nutzer keine Daten des vorherigen sieht.
+        void clearLocalKioskData().finally(() => {
+          window.location.reload();
+        });
       } else {
         onReset(target);
       }

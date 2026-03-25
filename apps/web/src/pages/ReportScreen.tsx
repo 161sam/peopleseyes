@@ -1,19 +1,32 @@
+/**
+ * Report-Screen – 6-Schritt-Formular für anonyme Meldungen.
+ *
+ * Fehler 2 fix: empfängt geoProps von App.tsx statt eigenen useGeolocation-Hook
+ *               zu instanziieren (verhindert doppelten GPS-Watcher).
+ * Fehler 3 fix: authorityVisibility ist jetzt ein eigener Schritt im Formular
+ *               statt hardcodiert auf EindeutigErkennbar.
+ */
 import React, { useState } from 'react';
-import { AuthorityCategory, AuthorityVisibility, ObservedActivityType, ObservationConfidence, H3Resolution } from '@peopleseyes/core-model';
+import {
+  AuthorityCategory, AuthorityVisibility,
+  ObservedActivityType, ObservationConfidence, H3Resolution,
+} from '@peopleseyes/core-model';
 import { createReport } from '@peopleseyes/core-logic';
-import { useGeolocation } from '../hooks/useGeolocation.js';
 import { useReports } from '../hooks/useReports.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
+import type { GeoProps } from '../App.js';
 
 interface ReportScreenProps {
+  geoProps: GeoProps;
   onSubmitSuccess: () => void;
 }
 
-type Step = 'authority' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
+type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
 
 interface FormState {
   authority: AuthorityCategory | null;
+  visibility: AuthorityVisibility | null;
   activity: ObservedActivityType | null;
   confidence: ObservationConfidence | null;
   description: string;
@@ -21,12 +34,20 @@ interface FormState {
 
 const INITIAL_FORM: FormState = {
   authority: null,
+  visibility: null,
   activity: null,
   confidence: null,
   description: '',
 };
 
-const STEPS: Step[] = ['authority', 'activity', 'confidence', 'description', 'confirm'];
+const STEPS: Step[] = ['authority', 'visibility', 'activity', 'confidence', 'description', 'confirm'];
+
+/** Menschenlesbare Labels für AuthorityVisibility (DE) */
+const VISIBILITY_LABELS: Record<AuthorityVisibility, string> = {
+  [AuthorityVisibility.EindeutigErkennbar]: 'Eindeutig erkennbar (Uniform / Fahrzeug)',
+  [AuthorityVisibility.Zivil]: 'Zivil gekleidet, aber identifizierbar',
+  [AuthorityVisibility.Unklar]: 'Nicht sicher zuzuordnen',
+};
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
@@ -62,7 +83,7 @@ function OptionButton<T extends string>({
   );
 }
 
-const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
+const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, onSubmitSuccess }) => {
   const [step, setStep] = useState<Step>('authority');
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,27 +91,30 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
 
   const { settings } = useUserSettings();
   const { t } = useI18n(settings.locale);
-  const { rawCoords, error: geoError } = useGeolocation(
-    settings.reportResolution as H3Resolution,
-  );
+  const { rawCoords, geoError } = geoProps;
   const { addReport } = useReports();
 
-  const currentStepIndex = STEPS.indexOf(step);
+  const currentStepIndex = STEPS.indexOf(step as (typeof STEPS)[number]);
 
   const goNext = () => {
-    const idx = STEPS.indexOf(step as Step);
+    const idx = STEPS.indexOf(step as (typeof STEPS)[number]);
     if (idx < STEPS.length - 1) setStep(STEPS[idx + 1]!);
   };
 
   const goBack = () => {
-    const idx = STEPS.indexOf(step as Step);
+    const idx = STEPS.indexOf(step as (typeof STEPS)[number]);
     if (idx > 0) setStep(STEPS[idx - 1]!);
   };
 
-  const handleSubmit = async () => {
-    if (!form.authority || !form.activity || !form.confidence) return;
+  const isNextDisabled =
+    (step === 'authority' && !form.authority) ||
+    (step === 'visibility' && !form.visibility) ||
+    (step === 'activity' && !form.activity) ||
+    (step === 'confidence' && !form.confidence);
 
-    // Fallback: wenn kein Standort, Zentrum Deutschland
+  const handleSubmit = async () => {
+    if (!form.authority || !form.visibility || !form.activity || !form.confidence) return;
+
     const lat = rawCoords?.lat ?? 51.3;
     const lng = rawCoords?.lng ?? 10.0;
 
@@ -102,14 +126,13 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
         lat,
         lng,
         authorityCategory: form.authority,
-        authorityVisibility: AuthorityVisibility.EindeutigErkennbar,
+        authorityVisibility: form.visibility,
         activityType: form.activity,
         confidence: form.confidence,
         ...(form.description.trim() ? { description: form.description.trim() } : {}),
         resolution: settings.reportResolution as H3Resolution,
       };
       const report = createReport(draft);
-
       await addReport(report);
       setStep('success');
     } catch (err) {
@@ -166,7 +189,23 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
           </div>
         )}
 
-        {/* Schritt 2: Aktivität */}
+        {/* Schritt 2: Erkennbarkeit (Fehler 3 fix) */}
+        {step === 'visibility' && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-300 mb-3">Wie erkennbar war die Behörde?</p>
+            {Object.values(AuthorityVisibility).map(vis => (
+              <OptionButton
+                key={vis}
+                value={vis}
+                label={VISIBILITY_LABELS[vis]}
+                selected={form.visibility === vis}
+                onSelect={v => setForm(f => ({ ...f, visibility: v }))}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Schritt 3: Aktivität */}
         {step === 'activity' && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-300 mb-3">{t.report.step.activity}</p>
@@ -182,7 +221,7 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
           </div>
         )}
 
-        {/* Schritt 3: Confidence */}
+        {/* Schritt 4: Confidence */}
         {step === 'confidence' && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-slate-300 mb-3">{t.report.step.confidence}</p>
@@ -198,7 +237,7 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
           </div>
         )}
 
-        {/* Schritt 4: Beschreibung */}
+        {/* Schritt 5: Beschreibung */}
         {step === 'description' && (
           <div className="space-y-3">
             <p className="text-sm font-medium text-slate-300">{t.report.step.description}</p>
@@ -215,19 +254,20 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
           </div>
         )}
 
-        {/* Schritt 5: Bestätigen */}
+        {/* Schritt 6: Bestätigen */}
         {step === 'confirm' && (
           <div className="space-y-3">
             <p className="text-sm font-medium text-slate-300 mb-3">{t.report.step.confirm}</p>
             <div className="bg-slate-800 rounded-lg divide-y divide-slate-700 text-sm">
               {[
                 { label: t.report.authorityLabel, value: form.authority ? t.authority[form.authority] : '' },
+                { label: 'Erkennbarkeit', value: form.visibility ? VISIBILITY_LABELS[form.visibility] : '' },
                 { label: t.report.activityLabel, value: form.activity ? t.activity[form.activity] : '' },
                 { label: t.report.confidenceLabel, value: form.confidence ? t.confidence[form.confidence] : '' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between px-4 py-3 gap-4">
                   <span className="text-slate-400 flex-shrink-0">{label}</span>
-                  <span className="text-slate-200 text-right">{value}</span>
+                  <span className="text-slate-200 text-right text-xs">{value}</span>
                 </div>
               ))}
               {form.description && (
@@ -269,18 +309,14 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ onSubmitSuccess }) => {
         {step !== 'confirm' ? (
           <button
             onClick={goNext}
-            disabled={
-              (step === 'authority' && !form.authority) ||
-              (step === 'activity' && !form.activity) ||
-              (step === 'confidence' && !form.confidence)
-            }
+            disabled={isNextDisabled}
             className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             {t.common.next}
           </button>
         ) : (
           <button
-            onClick={handleSubmit}
+            onClick={() => { void handleSubmit(); }}
             disabled={isSubmitting}
             className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
           >

@@ -4,6 +4,7 @@ import type { SupportedLocale } from '@peopleseyes/core-model';
 import { isRtlLocale } from '@peopleseyes/core-i18n';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
+import { usePanicWipe } from '../hooks/usePanicWipe.js';
 
 // ─── RightsScreen ─────────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ export const SettingsScreen: React.FC = () => {
   const { settings, updateSettings } = useUserSettings();
   const { t } = useI18n(settings.locale);
   const isRtl = isRtlLocale(settings.locale);
+  const { onTap, tapCount, isWiping } = usePanicWipe();
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-6">
@@ -179,6 +181,30 @@ export const SettingsScreen: React.FC = () => {
         <div className="px-4 py-3 bg-slate-800 rounded-xl text-xs text-slate-500 leading-relaxed">
           {t.report.legalDisclaimer}
         </div>
+      </section>
+
+      {/* Panic-Button – 5× schnelles Tippen auf das Versions-Badge löscht alle lokalen Daten */}
+      <section className="pt-2">
+        <button
+          onClick={onTap}
+          className={`w-full text-center py-2 rounded-lg text-xs transition-colors select-none ${
+            isWiping
+              ? 'bg-red-900/60 text-red-300 animate-pulse'
+              : tapCount > 0
+              ? 'bg-slate-800 text-red-400/70'
+              : 'bg-slate-900 text-slate-700 hover:text-slate-600'
+          }`}
+          aria-label="Alle lokalen Daten löschen"
+        >
+          {isWiping
+            ? 'Lösche Daten…'
+            : tapCount > 0
+            ? `${tapCount}/${5} – Alle Daten löschen`
+            : 'v0.1.0'}
+        </button>
+        <p className="text-center text-xs text-slate-800 mt-1 select-none">
+          5× tippen zum Löschen aller lokalen Daten
+        </p>
       </section>
     </div>
   );

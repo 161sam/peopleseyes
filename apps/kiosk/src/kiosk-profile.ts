@@ -93,16 +93,39 @@ export function validateKioskProfile(value: unknown): value is KioskProfile {
   if (typeof value !== 'object' || value === null) return false;
   const p = value as Record<string, unknown>;
 
+  const VALID_TABS = new Set<string>(['map', 'rights', 'report', 'emergency']);
+  const tabsValid =
+    Array.isArray(p['tabs']) &&
+    (p['tabs'] as unknown[]).length > 0 &&
+    (p['tabs'] as unknown[]).every(t => typeof t === 'string' && VALID_TABS.has(t));
+
+  // WARN-02 fix: mapCenter-Koordinaten auf valide Bereiche prüfen.
+  // Ein Profil mit lat:NaN oder lat:999 würde MapLibre zum Absturz bringen.
+  const mc = p['mapCenter'] as Record<string, unknown> | null | undefined;
+  const mapCenterValid =
+    typeof mc === 'object' &&
+    mc !== null &&
+    typeof mc['lat'] === 'number' && isFinite(mc['lat']) &&
+    mc['lat'] >= -90 && mc['lat'] <= 90 &&
+    typeof mc['lng'] === 'number' && isFinite(mc['lng']) &&
+    mc['lng'] >= -180 && mc['lng'] <= 180 &&
+    typeof mc['zoom'] === 'number' &&
+    mc['zoom'] >= 1 && mc['zoom'] <= 18;
+
+  // inactivityTimeoutSec muss null oder eine Zahl >= 30 sein
+  const timeoutValid =
+    p['inactivityTimeoutSec'] === null ||
+    (typeof p['inactivityTimeoutSec'] === 'number' && p['inactivityTimeoutSec'] >= 30);
+
   return (
-    typeof p['id'] === 'string' &&
+    typeof p['id'] === 'string' && p['id'].length > 0 &&
     typeof p['name'] === 'string' &&
     p['schemaVersion'] === '1' &&
-    Array.isArray(p['tabs']) &&
+    tabsValid &&
     typeof p['locale'] === 'string' &&
-    typeof p['mapCenter'] === 'object' &&
-    p['mapCenter'] !== null &&
+    mapCenterValid &&
     Array.isArray(p['emergencyContacts']) &&
-    (p['inactivityTimeoutSec'] === null || typeof p['inactivityTimeoutSec'] === 'number') &&
+    timeoutValid &&
     typeof p['allowReporting'] === 'boolean'
   );
 }

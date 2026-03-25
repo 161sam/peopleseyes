@@ -27,21 +27,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 function useSettings() {
   const [locale, setLocaleState] = useState<SupportedLocale>('de');
   const [resolution, setResolutionState] = useState<6 | 7 | 8>(7);
+  const [persistEvidence, setPersistEvidenceState] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   // BUG-04 fix: Einstellungen beim Mount aus AsyncStorage laden
   useEffect(() => {
     const load = async () => {
       try {
-        const [storedLocale, storedResolution] = await Promise.all([
+        const [storedLocale, storedResolution, storedPersist] = await Promise.all([
           AsyncStorage.getItem('pe:locale'),
           AsyncStorage.getItem('pe:resolution'),
+          AsyncStorage.getItem('pe:persistEvidence'),
         ]);
         if (storedLocale) setLocaleState(storedLocale as SupportedLocale);
         if (storedResolution) {
           const r = Number(storedResolution) as 6 | 7 | 8;
           if (r === 6 || r === 7 || r === 8) setResolutionState(r);
         }
+        if (storedPersist !== null) setPersistEvidenceState(storedPersist === 'true');
       } catch {
         // AsyncStorage-Fehler – Defaults behalten
       } finally {
@@ -59,34 +62,59 @@ function useSettings() {
     setResolutionState(v);
     await AsyncStorage.setItem('pe:resolution', String(v));
   };
+  // MED-01 fix: persistEvidence wird jetzt tatsächlich gespeichert
+  const setPersistEvidence = async (v: boolean) => {
+    setPersistEvidenceState(v);
+    await AsyncStorage.setItem('pe:persistEvidence', String(v));
+  };
 
-  return { locale, resolution, setLocale, setResolution, loaded };
+  return { locale, resolution, persistEvidence, setLocale, setResolution, setPersistEvidence, loaded };
 }
 
 // ─── ReportScreen ─────────────────────────────────────────────────────────────
 
-type Step = 'authority' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
+type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
+
+const VISIBILITY_LABELS: Record<AuthorityVisibility, string> = {
+  [AuthorityVisibility.EindeutigErkennbar]: 'Eindeutig erkennbar (Uniform / Fahrzeug)',
+  [AuthorityVisibility.Zivil]: 'Zivil gekleidet, aber identifizierbar',
+  [AuthorityVisibility.Unklar]: 'Nicht sicher zuzuordnen',
+};
+
+const STEPS_ORDER: Step[] = ['authority', 'visibility', 'activity', 'confidence', 'description', 'confirm'];
 
 export const ReportScreen: React.FC = () => {
-  const t = getTranslations('de');
+  const { locale } = useSettings();
+  const t = getTranslations(locale);
   const { addReport } = useNativeReports();
   const { rawCoords } = useNativeLocation();
   const [step, setStep] = useState<Step>('authority');
   const [authority, setAuthority] = useState<AuthorityCategory | null>(null);
+  const [visibility, setVisibility] = useState<AuthorityVisibility | null>(null);
   const [activity, setActivity] = useState<ObservedActivityType | null>(null);
   const [confidence, setConfidence] = useState<ObservationConfidence | null>(null);
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const goNext = () => {
+    const idx = STEPS_ORDER.indexOf(step);
+    if (idx < STEPS_ORDER.length - 1) setStep(STEPS_ORDER[idx + 1]!);
+  };
+
+  const goBack = () => {
+    const idx = STEPS_ORDER.indexOf(step);
+    if (idx > 0) setStep(STEPS_ORDER[idx - 1]!);
+  };
+
   const handleSubmit = async () => {
-    if (!authority || !activity || !confidence) return;
+    if (!authority || !visibility || !activity || !confidence) return;
     setIsSubmitting(true);
     try {
       const draft = {
         lat: rawCoords?.lat ?? 51.3,
         lng: rawCoords?.lng ?? 10.0,
         authorityCategory: authority,
-        authorityVisibility: AuthorityVisibility.EindeutigErkennbar,
+        authorityVisibility: visibility,
         activityType: activity,
         confidence,
         ...(description.trim() ? { description: description.trim() } : {}),
@@ -108,7 +136,10 @@ export const ReportScreen: React.FC = () => {
         <Text style={s.successIcon}>✓</Text>
         <Text style={s.h2}>Anonym gemeldet</Text>
         <Text style={s.muted}>{t.report.successMessage}</Text>
-        <TouchableOpacity style={s.btn} onPress={() => { setStep('authority'); setAuthority(null); setActivity(null); setConfidence(null); setDescription(''); }}>
+        <TouchableOpacity style={s.btn} onPress={() => {
+          setStep('authority'); setAuthority(null); setVisibility(null);
+          setActivity(null); setConfidence(null); setDescription('');
+        }}>
           <Text style={s.btnText}>Neue Meldung</Text>
         </TouchableOpacity>
       </View>
@@ -134,19 +165,25 @@ export const ReportScreen: React.FC = () => {
       {step === 'authority' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.authority}</Text>
-          {options(Object.values(AuthorityCategory), t.authority, authority, v => { setAuthority(v); setStep('activity'); })}
+          {options(Object.values(AuthorityCategory), t.authority, authority, v => { setAuthority(v); goNext(); })}
+        </>
+      )}
+      {step === 'visibility' && (
+        <>
+          <Text style={s.stepLabel}>Wie erkennbar war die Behörde?</Text>
+          {options(Object.values(AuthorityVisibility), VISIBILITY_LABELS, visibility, v => { setVisibility(v); goNext(); })}
         </>
       )}
       {step === 'activity' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.activity}</Text>
-          {options(Object.values(ObservedActivityType), t.activity, activity, v => { setActivity(v); setStep('confidence'); })}
+          {options(Object.values(ObservedActivityType), t.activity, activity, v => { setActivity(v); goNext(); })}
         </>
       )}
       {step === 'confidence' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.confidence}</Text>
-          {options(Object.values(ObservationConfidence), t.confidence, confidence, v => { setConfidence(v); setStep('description'); })}
+          {options(Object.values(ObservationConfidence), t.confidence, confidence, v => { setConfidence(v); goNext(); })}
         </>
       )}
       {step === 'description' && (
@@ -162,7 +199,7 @@ export const ReportScreen: React.FC = () => {
             numberOfLines={4}
           />
           <Text style={s.hint}>{description.length}/280 · {t.report.descriptionHint}</Text>
-          <TouchableOpacity style={s.btn} onPress={() => setStep('confirm')}>
+          <TouchableOpacity style={s.btn} onPress={goNext}>
             <Text style={s.btnText}>{t.common.next}</Text>
           </TouchableOpacity>
         </>
@@ -171,21 +208,22 @@ export const ReportScreen: React.FC = () => {
         <>
           <Text style={s.stepLabel}>{t.report.step.confirm}</Text>
           {authority && <View style={s.row}><Text style={s.rowLabel}>{t.report.authorityLabel}</Text><Text style={s.rowValue}>{t.authority[authority]}</Text></View>}
+          {visibility && <View style={s.row}><Text style={s.rowLabel}>Erkennbarkeit</Text><Text style={s.rowValue}>{VISIBILITY_LABELS[visibility]}</Text></View>}
           {activity && <View style={s.row}><Text style={s.rowLabel}>{t.report.activityLabel}</Text><Text style={s.rowValue}>{t.activity[activity]}</Text></View>}
           {confidence && <View style={s.row}><Text style={s.rowLabel}>{t.report.confidenceLabel}</Text><Text style={s.rowValue}>{t.confidence[confidence]}</Text></View>}
           <Text style={s.disclaimer}>{t.report.legalDisclaimer}</Text>
-          <TouchableOpacity style={[s.btn, isSubmitting && s.btnDisabled]} onPress={handleSubmit} disabled={isSubmitting}>
+          <TouchableOpacity
+            style={[s.btn, isSubmitting && s.btnDisabled]}
+            onPress={() => { void handleSubmit(); }}
+            disabled={isSubmitting}
+          >
             <Text style={s.btnText}>{isSubmitting ? t.common.loading : t.report.submitButton}</Text>
           </TouchableOpacity>
         </>
       )}
 
       {step !== 'authority' && (
-        <TouchableOpacity style={s.backBtn} onPress={() => {
-          const steps: Step[] = ['authority', 'activity', 'confidence', 'description', 'confirm'];
-          const idx = steps.indexOf(step);
-          if (idx > 0) setStep(steps[idx - 1]!);
-        }}>
+        <TouchableOpacity style={s.backBtn} onPress={goBack}>
           <Text style={s.backBtnText}>{t.common.back}</Text>
         </TouchableOpacity>
       )}
@@ -196,7 +234,8 @@ export const ReportScreen: React.FC = () => {
 // ─── RightsScreen ─────────────────────────────────────────────────────────────
 
 export const RightsScreen: React.FC = () => {
-  const t = getTranslations('de');
+  const { locale } = useSettings();
+  const t = getTranslations(locale);
   const [open, setOpen] = useState<string | null>(null);
   const topics = t.rights.topics;
 
@@ -230,9 +269,8 @@ export const RightsScreen: React.FC = () => {
 // ─── SettingsScreen ───────────────────────────────────────────────────────────
 
 export const SettingsScreen: React.FC = () => {
-  const t = getTranslations('de');
-  const { locale, resolution, setLocale, setResolution } = useSettings();
-  const [persistEvidence, setPersistEvidence] = useState(false);
+  const { locale, resolution, persistEvidence, setLocale, setResolution, setPersistEvidence } = useSettings();
+  const t = getTranslations(locale);
 
   return (
     <ScrollView style={s.fill} contentContainerStyle={s.container}>
@@ -240,9 +278,20 @@ export const SettingsScreen: React.FC = () => {
 
       <Text style={s.sectionLabel}>{t.settings.language}</Text>
       <View style={s.segmented}>
-        {(['de', 'en'] as SupportedLocale[]).map(l => (
-          <TouchableOpacity key={l} style={[s.segment, locale === l && s.segmentActive]} onPress={() => void setLocale(l)}>
-            <Text style={[s.segmentText, locale === l && s.segmentTextActive]}>{l === 'de' ? 'Deutsch' : 'English'}</Text>
+        {([
+          { value: 'de', label: 'Deutsch' },
+          { value: 'en', label: 'English' },
+          { value: 'tr', label: 'Türkçe' },
+          { value: 'uk', label: 'Укр' },
+          { value: 'ar', label: 'عربي' },
+          { value: 'fa', label: 'فارسی' },
+        ] as { value: SupportedLocale; label: string }[]).map(({ value, label }) => (
+          <TouchableOpacity
+            key={value}
+            style={[s.segment, locale === value && s.segmentActive]}
+            onPress={() => void setLocale(value)}
+          >
+            <Text style={[s.segmentText, locale === value && s.segmentTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -262,7 +311,7 @@ export const SettingsScreen: React.FC = () => {
           <Text style={s.toggleLabel}>{t.settings.persistEvidence}</Text>
           <Text style={s.hint}>{t.settings.persistEvidenceHint}</Text>
         </View>
-        <Switch value={persistEvidence} onValueChange={setPersistEvidence} trackColor={{ true: '#3b82f6' }} />
+        <Switch value={persistEvidence} onValueChange={v => void setPersistEvidence(v)} trackColor={{ true: '#3b82f6' }} />
       </View>
 
       <Text style={[s.hint, { marginTop: 24 }]}>{t.report.legalDisclaimer}</Text>

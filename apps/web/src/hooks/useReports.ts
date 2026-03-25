@@ -15,7 +15,7 @@ export function useReports(): UseReportsReturn {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialisierung
+  // Initialisierung + P2P-Callback verdrahten
   useEffect(() => {
     let mounted = true;
 
@@ -27,21 +27,38 @@ export function useReports(): UseReportsReturn {
         if (!mounted) return;
 
         const localAggregates = await localReportStore.computeAllAggregates();
-        setAggregates(localAggregates);
-        setIsLoading(false);
-
-        // P2P-Updates eingehend mergen
-        // In Phase 2: Subscribe auf sichtbare Zellen (nach Map-Viewport)
-        // Vorerst: alle eingehenden Updates akzeptieren
+        if (mounted) {
+          setAggregates(localAggregates);
+          setIsLoading(false);
+        }
       } catch (err) {
         if (!mounted) return;
         console.error('Report-Store init fehlgeschlagen:', err);
         setIsLoading(false);
+        setError('Lokaler Speicher konnte nicht geöffnet werden.');
       }
     };
 
     void init();
-    return () => { mounted = false; };
+
+    // BUG-02 fix: eingehende P2P-Aggregate in den lokalen State mergen.
+    // validateCellAggregate() in p2p-sync stellt sicher, dass nur valide
+    // Daten diesen Callback erreichen.
+    const unsubscribeP2P = p2pSync.onCellUpdate((incoming) => {
+      if (!mounted) return;
+      setAggregates(prev => {
+        const idx = prev.findIndex(a => a.cellId === incoming.cellId);
+        if (idx === -1) return [...prev, incoming];
+        const updated = [...prev];
+        updated[idx] = incoming;
+        return updated;
+      });
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribeP2P();
+    };
   }, []);
 
   const addReport = useCallback(async (report: Report) => {

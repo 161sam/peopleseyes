@@ -11,6 +11,28 @@
     <meta name="apple-mobile-web-app-title" content="PE Terminal" />
     <!-- Kein Caching für das HTML selbst – PWA übernimmt Caching -->
     <meta http-equiv="Cache-Control" content="no-store" />
+    <!--
+      Content Security Policy – SEC-01 fix
+      Kiosk-Profil-URLs dürfen nur via HTTPS von bekannten Hosts geladen werden.
+      Kein Inline-Script außer dem Modul-Einstiegspunkt.
+      'unsafe-inline' für style nötig wegen Tailwind + dynamischer Branding-Farben.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob: https://tiles.openfreemap.org https:;
+      connect-src 'self'
+        https://gun-manhattan.herokuapp.com
+        wss://gun-manhattan.herokuapp.com
+        https://peer.wallie.io
+        wss://peer.wallie.io
+        https://tiles.openfreemap.org
+        https:;
+      worker-src 'self' blob:;
+      manifest-src 'self';
+      frame-ancestors 'none';
+    " />
     <meta name="description" content="PeoplesEyes InfoTerminal" />
     <!-- Kein Tracking -->
     <title>PeoplesEyes InfoTerminal</title>

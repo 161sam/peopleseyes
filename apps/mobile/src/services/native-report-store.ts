@@ -1,13 +1,12 @@
 /**
  * Nativer Report-Store via expo-sqlite.
  *
- * Ersetzt den IndexedDB-Store der Web-App für React Native.
- * expo-sqlite verwendet SQLite, das auf Android/iOS nativ verfügbar ist.
+ * Fehler 7 fix: PRAGMA user_version-basierte Schema-Migration.
+ *   Schema v1 → v2: (zukünftige Änderungen hier dokumentieren)
+ *   Bei unbekannter version wird die DB zurückgesetzt statt abzustürzen.
  *
- * Privacy-Prinzipien identisch mit Web:
- * - Rohe GPS-Koordinaten werden nie gespeichert
- * - Nur H3-Zell-IDs + aggregierte Daten
- * - Kein Sync ohne explizite Nutzer-Aktion
+ * Fehler 7b fix: validateReport() filtert Rows die nach einem Schema-Upgrade
+ *   mit alten Enum-Werten nicht mehr valide sind.
  */
 
 import * as SQLite from 'expo-sqlite';
@@ -16,9 +15,12 @@ import {
   aggregateReportsForCell,
   deduplicateReports,
   isLikelySpam,
+  validateReport,
 } from '@peopleseyes/core-logic';
 
 const DB_NAME = 'peopleseyes.db';
+/** Aktuelle Schema-Version — bei jeder Migration inkrementieren */
+const CURRENT_SCHEMA_VERSION = 1;
 
 const CREATE_REPORTS_TABLE = `
   CREATE TABLE IF NOT EXISTS reports (
@@ -44,10 +46,53 @@ export class NativeReportStore {
 
   async init(): Promise<void> {
     this.db = await SQLite.openDatabaseAsync(DB_NAME);
-    await this.db.execAsync(CREATE_REPORTS_TABLE);
-    await this.db.execAsync(CREATE_INDEX);
-    // IMP-04: automatisches Pruning beim Start
+    await this.runMigrations(this.db);
+    // Automatisches Pruning beim Start
     await this.pruneOldReports().catch(err => console.warn('Pruning fehlgeschlagen:', err));
+  }
+
+  /**
+   * Führt Schema-Migrationen aus basierend auf PRAGMA user_version.
+   *
+   * Fehler 7 fix: ohne diese Prüfung würden App-Updates die das Schema ändern
+   * zu inkonsistenten Daten oder Abstürzen führen.
+   */
+  private async runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
+    const versionRow = await db.getFirstAsync<{ user_version: number }>(
+      'PRAGMA user_version;',
+    );
+    const currentVersion = versionRow?.user_version ?? 0;
+
+    if (currentVersion === CURRENT_SCHEMA_VERSION) {
+      // Schema ist aktuell – nichts zu tun
+      return;
+    }
+
+    if (currentVersion === 0) {
+      // Erstinstallation: Schema anlegen
+      await db.execAsync(CREATE_REPORTS_TABLE);
+      await db.execAsync(CREATE_INDEX);
+      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+      return;
+    }
+
+    if (currentVersion > CURRENT_SCHEMA_VERSION) {
+      // Datenbank stammt aus einer neueren App-Version — DB zurücksetzen
+      // um Datenfehler zu vermeiden (z.B. nach App-Downgrade)
+      console.warn(
+        `[NativeReportStore] DB-Version ${currentVersion} > App-Version ${CURRENT_SCHEMA_VERSION}. Datenbank wird zurückgesetzt.`,
+      );
+      await db.execAsync('DROP TABLE IF EXISTS reports;');
+      await db.execAsync(CREATE_REPORTS_TABLE);
+      await db.execAsync(CREATE_INDEX);
+      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
+      return;
+    }
+
+    // Zukünftige Migrationen hier als if-Kette ergänzen:
+    // if (currentVersion < 2) { await db.execAsync('ALTER TABLE reports ADD COLUMN ...'); }
+    // if (currentVersion < 3) { ... }
+    await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION};`);
   }
 
   private ensureDb(): SQLite.SQLiteDatabase {
@@ -98,39 +143,67 @@ export class NativeReportStore {
       position_json: string;
     }>('SELECT * FROM reports ORDER BY reported_at_minute DESC');
 
+    const now = Date.now();
+    const mapped = rows.map(row => {
+      try {
+        return {
+          id: row.id,
+          position: JSON.parse(row.position_json) as Report['position'],
+          authorityCategory: row.authority_category as Report['authorityCategory'],
+          authorityVisibility: row.authority_visibility as Report['authorityVisibility'],
+          activityType: row.activity_type as Report['activityType'],
+          confidence: row.confidence as Report['confidence'],
+          reportedAtMinute: row.reported_at_minute,
+          ...(row.description ? { description: row.description } : {}),
+          localConfirmationCount: row.local_confirmation_count,
+        };
+      } catch {
+        return null;
+      }
+    });
+
+    // Fehler 7b fix: validateReport filtert Rows mit veralteten Enum-Werten
+    // (z.B. nach Schema-Änderungen oder App-Upgrades mit neuen Enum-Werten)
     return deduplicateReports(
-      rows.map(row => ({
-        id: row.id,
-        position: JSON.parse(row.position_json) as Report['position'],
-        authorityCategory: row.authority_category as Report['authorityCategory'],
-        authorityVisibility: row.authority_visibility as Report['authorityVisibility'],
-        activityType: row.activity_type as Report['activityType'],
-        confidence: row.confidence as Report['confidence'],
-        reportedAtMinute: row.reported_at_minute,
-        ...(row.description ? { description: row.description } : {}),
-        localConfirmationCount: row.local_confirmation_count,
-      })),
+      mapped.filter((r): r is Report => r !== null && validateReport(r, now)),
     );
   }
 
   async getReportsForCell(cellId: string): Promise<Report[]> {
     const db = this.ensureDb();
-    const rows = await db.getAllAsync<{ position_json: string } & Record<string, unknown>>(
-      'SELECT * FROM reports WHERE cell_id = ?',
-      [cellId],
-    );
+    const rows = await db.getAllAsync<{
+      id: string;
+      cell_id: string;
+      authority_category: string;
+      authority_visibility: string;
+      activity_type: string;
+      confidence: string;
+      reported_at_minute: number;
+      description: string | null;
+      local_confirmation_count: number;
+      position_json: string;
+    }>('SELECT * FROM reports WHERE cell_id = ?', [cellId]);
 
-    return rows.map(row => ({
-      id: row['id'] as string,
-      position: JSON.parse(row.position_json) as Report['position'],
-      authorityCategory: row['authority_category'] as Report['authorityCategory'],
-      authorityVisibility: row['authority_visibility'] as Report['authorityVisibility'],
-      activityType: row['activity_type'] as Report['activityType'],
-      confidence: row['confidence'] as Report['confidence'],
-      reportedAtMinute: row['reported_at_minute'] as number,
-      ...((row['description'] as string | null) ? { description: row['description'] as string } : {}),
-      localConfirmationCount: row['local_confirmation_count'] as number,
-    }));
+    const now = Date.now();
+    return rows
+      .map(row => {
+        try {
+          return {
+            id: row.id,
+            position: JSON.parse(row.position_json) as Report['position'],
+            authorityCategory: row.authority_category as Report['authorityCategory'],
+            authorityVisibility: row.authority_visibility as Report['authorityVisibility'],
+            activityType: row.activity_type as Report['activityType'],
+            confidence: row.confidence as Report['confidence'],
+            reportedAtMinute: row.reported_at_minute,
+            ...(row.description ? { description: row.description } : {}),
+            localConfirmationCount: row.local_confirmation_count,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((r): r is Report => r !== null && validateReport(r, now));
   }
 
   async computeAllAggregates(): Promise<CellAggregate[]> {
@@ -148,7 +221,7 @@ export class NativeReportStore {
     );
   }
 
-  async pruneOldReports(maxAgeMs: number = 48 * 60 * 60 * 1000): Promise<number> {
+  async pruneOldReports(maxAgeMs = 48 * 60 * 60 * 1000): Promise<number> {
     const db = this.ensureDb();
     const cutoff = Date.now() - maxAgeMs;
     const result = await db.runAsync(

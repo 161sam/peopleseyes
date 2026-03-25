@@ -1,25 +1,29 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import MapView, { Polygon, Region } from 'react-native-maps';
 import type { CellAggregate, GeoBoundingBox } from '@peopleseyes/core-model';
-import { getCellBoundary } from '@peopleseyes/core-logic';
+import { getCellBoundary, scoreToColor } from '@peopleseyes/core-logic';
 import { getTranslations } from '@peopleseyes/core-i18n';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { SupportedLocale } from '@peopleseyes/core-model';
 import { useNativeReports } from '../hooks/useNativeReports.js';
 import { useNativeLocation } from '../hooks/useNativeLocation.js';
 import { mobileP2pSync } from '../services/mobile-p2p-sync.js';
 
-function scoreToColor(score: number): string {
-  if (score >= 0.8) return '#E24B4A';
-  if (score >= 0.5) return '#EF9F27';
-  if (score >= 0.2) return '#1D9E75';
-  return '#378ADD';
-}
 
 const MapScreen: React.FC = () => {
   const { aggregates, isLoading, syncStatus } = useNativeReports();
   const { rawCoords } = useNativeLocation();
-  const t = getTranslations('de');
+  const [locale, setLocale] = useState<SupportedLocale>('de');
+  const t = getTranslations(locale);
   const [selectedCell, setSelectedCell] = useState<CellAggregate | null>(null);
+
+  // Locale aus AsyncStorage laden (konsistent mit SettingsScreen)
+  useEffect(() => {
+    void AsyncStorage.getItem('pe:locale').then(v => {
+      if (v) setLocale(v as SupportedLocale);
+    });
+  }, []);
 
   const onRegionChange = useCallback((region: Region) => {
     const bbox: GeoBoundingBox = {

@@ -8,7 +8,7 @@
  */
 
 import type { CellAggregate, SyncStatus, GeoBoundingBox } from '@peopleseyes/core-model';
-import { isCellInBoundingBox } from '@peopleseyes/core-logic';
+import { isCellInBoundingBox, validateCellAggregate } from '@peopleseyes/core-logic';
 import {
   isInNotificationRadius,
   notifyNearbyReport,
@@ -22,8 +22,9 @@ const BOOTSTRAP_RELAYS = [
   'https://peer.wallie.io/gun',
 ];
 const GUN_NAMESPACE = 'peopleseyes_v1_cells';
-const MAX_AGGREGATE_AGE_MS = 2 * 60 * 60 * 1000;
 const RECONNECT_DELAY_MS = 5_000;
+/** Maximale Reconnect-Versuche bevor aufgegeben wird (verhindert unbegrenzte Rekursion) */
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 export type CellUpdateCallback = (aggregate: CellAggregate) => void;
 
@@ -50,6 +51,10 @@ export class MobileP2PSyncService {
   /** Status-Listener */
   private statusListeners = new Set<(s: SyncStatus) => void>();
   private initialized = false;
+  /** HIGH-03 fix: Anzahl bisheriger Reconnect-Versuche */
+  private reconnectAttempts = 0;
+  /** MED-08 fix: Flag ob destroy() aufgerufen wurde – verhindert Reconnect nach Teardown */
+  private destroyed = false;
 
   async init(): Promise<void> {
     if (this.initialized) return;
@@ -139,11 +144,9 @@ export class MobileP2PSyncService {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     this.cellsNode.get(cellId).on((data: unknown) => {
-      if (!data || typeof data !== 'object') return;
-      const agg = data as CellAggregate;
-
-      // Zu alte Daten verwerfen
-      if (Date.now() - agg.lastUpdatedHour > MAX_AGGREGATE_AGE_MS) return;
+      // SEC-02 fix: strukturelle Validierung vor dem Akzeptieren von P2P-Daten
+      if (!validateCellAggregate(data)) return;
+      const agg = data;
 
       // Alle globalen Callbacks aufrufen
       this.globalCellCallbacks.forEach(cb => cb(agg));
@@ -176,21 +179,32 @@ export class MobileP2PSyncService {
   }
 
   private async scheduleReconnect(): Promise<void> {
+    // MED-08 fix: kein Reconnect nach destroy()
+    if (this.destroyed) return;
+    // HIGH-03 fix: Reconnect-Loop nach MAX_RECONNECT_ATTEMPTS beenden
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.updateStatus({ state: 'error' });
+      return;
+    }
+    this.reconnectAttempts++;
     await new Promise<void>(resolve => {
-      setTimeout(() => resolve(), RECONNECT_DELAY_MS);
+      setTimeout(() => resolve(), RECONNECT_DELAY_MS * this.reconnectAttempts);
     });
-    if (this.status.connectedPeers === 0) {
+    if (!this.destroyed && this.status.connectedPeers === 0) {
+      this.initialized = false; // Guard zurücksetzen damit init() läuft
       void this.init();
     }
   }
 
   destroy(): void {
+    this.destroyed = true;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     this.gun?.off?.();
     this.globalCellCallbacks.clear();
     this.statusListeners.clear();
     this.subscribedCells.clear();
     this.initialized = false;
+    this.reconnectAttempts = 0;
   }
 }
 

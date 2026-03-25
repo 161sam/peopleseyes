@@ -1,28 +1,24 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CellAggregate } from '@peopleseyes/core-model';
-import { getCellBoundary, getCellCenter } from '@peopleseyes/core-logic';
+import { getCellBoundary, getCellCenter, scoreToColor } from '@peopleseyes/core-logic';
 import { useReports } from '../hooks/useReports.js';
-import { useGeolocation } from '../hooks/useGeolocation.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
 import { p2pSync } from '../services/p2p-sync.js';
+import type { GeoProps } from '../App.js';
 
-/** Farbe des Hexagons je aggregateScore (0–1) */
-function scoreToColor(score: number): string {
-  if (score >= 0.8) return '#E24B4A'; // rot – hoch
-  if (score >= 0.5) return '#EF9F27'; // amber – mittel
-  if (score >= 0.2) return '#1D9E75'; // grün – niedrig
-  return '#378ADD';                    // blau – sehr niedrig
+interface MapScreenProps {
+  geoProps: GeoProps;
 }
 
-const MapScreen: React.FC = () => {
+const MapScreen: React.FC<MapScreenProps> = ({ geoProps }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const centeredRef = useRef(false);
   const { aggregates, isLoading } = useReports();
-  const { rawCoords } = useGeolocation();
+  const { rawCoords } = geoProps;
   const [selectedCell, setSelectedCell] = useState<CellAggregate | null>(null);
   const { settings } = useUserSettings();
   const { t } = useI18n(settings.locale);
@@ -105,8 +101,8 @@ const MapScreen: React.FC = () => {
     };
   }, []);
 
-  /** Rendert die aktuellen Aggregates auf die Karte. */
-  const renderAggregates = (aggs: typeof aggregates) => {
+  /** Rendert die aktuellen Aggregates auf die Karte. Memoized damit useEffect sauber läuft. */
+  const renderAggregates = useCallback((aggs: typeof aggregates) => {
     const source = map.current?.getSource('cells') as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     const features = aggs.map(agg => {
@@ -121,7 +117,7 @@ const MapScreen: React.FC = () => {
       };
     });
     source.setData({ type: 'FeatureCollection', features });
-  };
+  }, []); // map.current ist ein Ref – kein Dep nötig
 
   // BUG-02 fix: wenn Style noch lädt, Aggregates in 'load'-Event nachrendern
   useEffect(() => {
@@ -133,8 +129,7 @@ const MapScreen: React.FC = () => {
       map.current.once('load', onLoad);
       return () => { map.current?.off('load', onLoad); };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aggregates]);
+  }, [aggregates, renderAggregates]);
 
   useEffect(() => {
     if (!map.current || !rawCoords || centeredRef.current) return;

@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+/**
+ * Standort-Hook für React Native.
+ *
+ * Fehler 8 fix: startWatch war eine instabile closure die bei jedem Render
+ * neu erzeugt wurde. Jetzt als useCallback mit stabiler Referenz, damit
+ * - requestPermission immer die aktuelle Version aufruft
+ * - useEffect bei resolution-Änderungen den Watch korrekt neu startet
+ */
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Location from 'expo-location';
 import type { AnonymizedPosition } from '@peopleseyes/core-model';
 import { H3Resolution } from '@peopleseyes/core-model';
@@ -23,32 +31,66 @@ export function useNativeLocation(
     isLoading: false,
     error: null,
   });
+  // Ref für aktive Subscription — damit stopWatch immer die richtige Instanz hält
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  // Ref auf resolution damit startWatch immer den aktuellen Wert sieht
+  // ohne in deps zu erscheinen
+  const resolutionRef = useRef(resolution);
+  resolutionRef.current = resolution;
 
-  const startWatch = async () => {
+  /** Stoppt den aktuellen Watcher */
+  const stopWatch = useCallback(() => {
+    if (watchRef.current) {
+      watchRef.current.remove();
+      watchRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Startet einen neuen GPS-Watcher.
+   * Fehler 8 fix: stabile useCallback-Referenz, damit requestPermission
+   * und der resolution-useEffect dieselbe Funktion aufrufen.
+   */
+  const startWatch = useCallback(async () => {
+    stopWatch(); // Vorherigen Watcher zuerst stoppen
     setState(s => ({ ...s, isLoading: true }));
 
-    watchRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: 100, // Update erst ab 100m Bewegung
-        timeInterval: 30_000,
-      },
-      ({ coords }) => {
-        setState(s => ({
-          ...s,
-          position: anonymizePosition(coords.latitude, coords.longitude, resolution),
-          rawCoords: { lat: coords.latitude, lng: coords.longitude },
-          isLoading: false,
-          error: null,
-        }));
-      },
-    );
-  };
+    try {
+      watchRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 100,
+          timeInterval: 30_000,
+        },
+        ({ coords }) => {
+          setState(s => ({
+            ...s,
+            position: anonymizePosition(
+              coords.latitude,
+              coords.longitude,
+              resolutionRef.current,
+            ),
+            rawCoords: { lat: coords.latitude, lng: coords.longitude },
+            isLoading: false,
+            error: null,
+          }));
+        },
+      );
+    } catch {
+      setState(s => ({
+        ...s,
+        error: 'Standort konnte nicht gestartet werden.',
+        isLoading: false,
+      }));
+    }
+  }, [stopWatch]);
 
-  const requestPermission = async () => {
+  const requestPermission = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    setState(s => ({ ...s, permissionStatus: status === 'granted' ? 'granted' : 'denied' }));
+    setState(s => ({
+      ...s,
+      permissionStatus: status === 'granted' ? 'granted' : 'denied',
+    }));
 
     if (status === 'granted') {
       await startWatch();
@@ -59,23 +101,39 @@ export function useNativeLocation(
         isLoading: false,
       }));
     }
-  };
+  }, [startWatch]);
 
+  // Mount: Berechtigung prüfen (nicht anfragen)
   useEffect(() => {
-    // Beim ersten Mount: Berechtigung prüfen (nicht anfragen)
+    let mounted = true;
     void Location.getForegroundPermissionsAsync().then(({ status }) => {
+      if (!mounted) return;
       if (status === 'granted') {
         setState(s => ({ ...s, permissionStatus: 'granted' }));
         void startWatch();
       } else {
-        setState(s => ({ ...s, permissionStatus: status === 'denied' ? 'denied' : 'undetermined' }));
+        setState(s => ({
+          ...s,
+          permissionStatus: status === 'denied' ? 'denied' : 'undetermined',
+        }));
       }
     });
-
     return () => {
-      watchRef.current?.remove();
+      mounted = false;
+      stopWatch();
     };
-  }, []);
+  }, [startWatch, stopWatch]);
+
+  // Fehler 8 fix: Bei resolution-Änderung Watch neu starten damit die neue
+  // Auflösung sofort in anonymizePosition greift
+  useEffect(() => {
+    if (state.permissionStatus === 'granted') {
+      void startWatch();
+    }
+    // Nur bei resolution-Änderung neu starten, nicht beim ersten Mount
+    // (der erste Mount wird im useEffect oben behandelt)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolution]);
 
   return { ...state, requestPermission };
 }

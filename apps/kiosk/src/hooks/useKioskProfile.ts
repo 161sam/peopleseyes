@@ -21,9 +21,15 @@ export function useKioskProfileLoader(): KioskProfileContextValue {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
     loadKioskProfile()
-      .then(p => { setProfile(p); setIsLoading(false); })
-      .catch(() => setIsLoading(false));
+      .then(p => {
+        if (mounted) { setProfile(p); setIsLoading(false); }
+      })
+      .catch(() => {
+        if (mounted) setIsLoading(false);
+      });
+    return () => { mounted = false; };
   }, []);
 
   return { profile, isLoading };

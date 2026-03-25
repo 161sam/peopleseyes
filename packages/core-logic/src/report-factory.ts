@@ -1,4 +1,4 @@
-import type { Report } from '@peopleseyes/core-model';
+import type { Report, CellAggregate } from '@peopleseyes/core-model';
 import {
   AuthorityCategory,
   AuthorityVisibility,
@@ -84,6 +84,54 @@ export function validateReport(value: unknown, nowMs: number = Date.now()): valu
   if (ts <= 0) return false;
   if (ts < nowMs - MAX_REPORT_AGE_MS) return false;
   if (ts > nowMs + MAX_FUTURE_DRIFT_MS) return false;
+
+  return true;
+}
+
+/** Maximales Alter eines akzeptierten CellAggregate (2 Stunden) */
+const MAX_AGGREGATE_AGE_MS = 2 * 60 * 60 * 1000;
+/** Maximale plausible Meldungsanzahl pro Zelle */
+const MAX_PLAUSIBLE_REPORT_COUNT = 10_000;
+
+/**
+ * Validiert ein empfangenes CellAggregate-Objekt aus dem P2P-Netz.
+ *
+ * Schützt vor:
+ * - Injizierten Enum-Werten außerhalb des bekannten Wertebereichs
+ * - Score-Inflation (aggregateScore > 1)
+ * - Negativen oder übermäßig großen Zählwerten
+ * - Veralteten Aggregaten (älter als MAX_AGGREGATE_AGE_MS)
+ * - Leerem oder malformem cellId-String
+ *
+ * SEC-02 fix: Ersetzt den unsicheren `data as CellAggregate`-Cast in p2p-sync.ts.
+ */
+export function validateCellAggregate(
+  value: unknown,
+  nowMs: number = Date.now(),
+): value is CellAggregate {
+  if (typeof value !== 'object' || value === null) return false;
+  const a = value as Record<string, unknown>;
+
+  if (
+    typeof a['cellId'] !== 'string' || a['cellId'].length === 0 ||
+    typeof a['reportCount'] !== 'number' ||
+    a['reportCount'] < 0 ||
+    a['reportCount'] > MAX_PLAUSIBLE_REPORT_COUNT ||
+    typeof a['aggregateScore'] !== 'number' ||
+    a['aggregateScore'] < 0 ||
+    a['aggregateScore'] > 1 ||
+    typeof a['lastUpdatedHour'] !== 'number' ||
+    a['lastUpdatedHour'] <= 0 ||
+    !Object.values(ObservedActivityType).includes(
+      a['dominantActivityType'] as ObservedActivityType,
+    ) ||
+    !Object.values(AuthorityCategory).includes(
+      a['dominantAuthorityCategory'] as AuthorityCategory,
+    )
+  ) return false;
+
+  // Aggregate älter als 2h ablehnen
+  if (nowMs - (a['lastUpdatedHour'] as number) > MAX_AGGREGATE_AGE_MS) return false;
 
   return true;
 }

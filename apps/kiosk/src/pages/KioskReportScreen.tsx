@@ -1,6 +1,8 @@
 /**
  * Kiosk-Report-Screen – nur aktiv wenn allowReporting=true im Profil.
- * Nutzt denselben Formular-Flow wie apps/web, aber ohne cross-app Import.
+ *
+ * CRIT-01 fix: Reports werden jetzt tatsächlich in IndexedDB gespeichert.
+ * Fehler 3 fix: authorityVisibility ist jetzt ein eigener Schritt im Formular.
  */
 import React, { useState } from 'react';
 import {
@@ -11,19 +13,29 @@ import {
 import { createReport } from '@peopleseyes/core-logic';
 import { getTranslations } from '@peopleseyes/core-i18n';
 import { useKioskProfile } from '../hooks/useKioskProfile.js';
+import { kioskReportStore } from '../services/kiosk-report-store.js';
 
 interface KioskReportScreenProps {
   onSubmitSuccess: () => void;
 }
+
+const VISIBILITY_LABELS: Record<AuthorityVisibility, string> = {
+  [AuthorityVisibility.EindeutigErkennbar]: 'Eindeutig erkennbar (Uniform / Fahrzeug)',
+  [AuthorityVisibility.Zivil]: 'Zivil gekleidet, aber identifizierbar',
+  [AuthorityVisibility.Unklar]: 'Nicht sicher zuzuordnen',
+};
 
 const KioskReportScreen: React.FC<KioskReportScreenProps> = ({ onSubmitSuccess }) => {
   const { profile } = useKioskProfile();
   const locale = profile?.locale ?? 'de';
   const t = getTranslations(locale);
   const [authority, setAuthority] = useState<AuthorityCategory | null>(null);
+  const [visibility, setVisibility] = useState<AuthorityVisibility | null>(null);
   const [activity, setActivity] = useState<ObservedActivityType | null>(null);
   const [confidence, setConfidence] = useState<ObservationConfidence | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!profile?.allowReporting) {
     return (
@@ -33,18 +45,27 @@ const KioskReportScreen: React.FC<KioskReportScreenProps> = ({ onSubmitSuccess }
     );
   }
 
-  const handleSubmit = () => {
-    if (!authority || !activity || !confidence) return;
-    // Kiosk meldet ohne Standort – Mittelpunkt Deutschland als Fallback
-    createReport({
-      lat: 51.3, lng: 10.0,
-      authorityCategory: authority,
-      authorityVisibility: AuthorityVisibility.Unklar,
-      activityType: activity,
-      confidence,
-      resolution: H3Resolution.Stadt, // Bewusst grob auf Kiosk
-    });
-    setSubmitted(true);
+  const handleSubmit = async () => {
+    if (!authority || !visibility || !activity || !confidence) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const report = createReport({
+        lat: 51.3, lng: 10.0,
+        authorityCategory: authority,
+        authorityVisibility: visibility,
+        activityType: activity,
+        confidence,
+        resolution: H3Resolution.Stadt, // Bewusst grob auf Kiosk
+      });
+      await kioskReportStore.init();
+      await kioskReportStore.addReport(report);
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Fehler beim Melden');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -53,7 +74,11 @@ const KioskReportScreen: React.FC<KioskReportScreenProps> = ({ onSubmitSuccess }
         <span className="text-5xl">✓</span>
         <p className="text-slate-300 text-sm">{t.report.successMessage}</p>
         <button
-          onClick={() => { setAuthority(null); setActivity(null); setConfidence(null); setSubmitted(false); onSubmitSuccess(); }}
+          onClick={() => {
+            setAuthority(null); setVisibility(null);
+            setActivity(null); setConfidence(null);
+            setSubmitted(false); onSubmitSuccess();
+          }}
           className="px-8 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium"
         >
           Zurück
@@ -82,23 +107,40 @@ const KioskReportScreen: React.FC<KioskReportScreenProps> = ({ onSubmitSuccess }
           {Object.values(AuthorityCategory).map(c => <OptionBtn key={c} value={c} label={t.authority[c]} selected={false} onSelect={setAuthority} />)}
         </>
       )}
-      {authority && !activity && (
+      {authority && !visibility && (
+        <>
+          <p className="text-sm font-medium text-slate-300">Wie erkennbar war die Behörde?</p>
+          {Object.values(AuthorityVisibility).map(v => <OptionBtn key={v} value={v} label={VISIBILITY_LABELS[v]} selected={false} onSelect={setVisibility} />)}
+        </>
+      )}
+      {authority && visibility && !activity && (
         <>
           <p className="text-sm font-medium text-slate-300">{t.report.step.activity}</p>
           {Object.values(ObservedActivityType).map(a => <OptionBtn key={a} value={a} label={t.activity[a]} selected={false} onSelect={setActivity} />)}
         </>
       )}
-      {authority && activity && !confidence && (
+      {authority && visibility && activity && !confidence && (
         <>
           <p className="text-sm font-medium text-slate-300">{t.report.step.confidence}</p>
           {Object.values(ObservationConfidence).map(c => <OptionBtn key={c} value={c} label={t.confidence[c]} selected={false} onSelect={setConfidence} />)}
         </>
       )}
-      {authority && activity && confidence && (
+      {authority && visibility && activity && confidence && (
         <>
           <p className="text-sm text-slate-500 leading-relaxed">{t.report.legalDisclaimer}</p>
-          <button onClick={handleSubmit} className="w-full py-4 bg-blue-600 text-white rounded-xl text-sm font-medium">
-            {t.report.submitButton}
+          {submitError && (
+            <p className="text-xs text-red-400 bg-red-900/20 rounded-lg px-3 py-2">{submitError}</p>
+          )}
+          <button
+            onClick={() => { void handleSubmit(); }}
+            disabled={isSubmitting}
+            className={`w-full py-4 rounded-xl text-sm font-medium transition-colors ${
+              isSubmitting
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-500 text-white'
+            }`}
+          >
+            {isSubmitting ? t.common.loading : t.report.submitButton}
           </button>
         </>
       )}

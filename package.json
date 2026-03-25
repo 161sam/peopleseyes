@@ -2,6 +2,7 @@
   "name": "peopleseyes",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Zivilgesellschaftliches Crowdsourcing-Tool zur Dokumentation von Behördenaktivitäten in EU/D",
   "scripts": {
     "dev": "turbo run dev",
