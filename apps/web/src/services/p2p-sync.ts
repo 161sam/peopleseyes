@@ -1,40 +1,45 @@
 /**
- * P2P-Sync via GUN.js
+ * P2P-Sync via GUN.js.
  *
- * GUN ist ein dezentrales, peer-to-peer Graph-Datenbank-System.
- * Daten werden zwischen Peers synchronisiert ohne zentralen Server.
- *
- * Privacy-Entscheidungen:
- * - Keine Nutzer-Authentifizierung (kein SEA)
- * - Nur aggregierte Zell-Daten werden geteilt, keine Rohdaten
- * - Reports werden lokal erzeugt und als CellAggregates propagiert
- * - Peer-ID ist ephemer und wird nicht gespeichert
- *
- * Fallback-Relays: Öffentliche GUN-Relays für Bootstrap.
- * In Produktion: selbst gehosteter Relay-Server empfohlen.
+ * Ergänzt Relay-Fallback, optionale Tor-Konfiguration und
+ * Integritätsprüfung signierter CellAggregates.
  */
 
-import type { CellAggregate, SyncStatus, GeoBoundingBox } from '@peopleseyes/core-model';
+import type { CellAggregate, GeoBoundingBox, SyncStatus } from '@peopleseyes/core-model';
 import { isCellInBoundingBox, validateCellAggregate } from '@peopleseyes/core-logic';
+import {
+  generateEphemeralKeypair,
+  signMessage,
+  verifySignature,
+  type EphemeralKeypair,
+} from '@peopleseyes/core-crypto';
+import { resolveRelayConfig } from './relay-config.js';
 
-// GUN hat kein offizielles ESM-Modul – dynamischer Import
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GunInstance = any;
 
-/** Öffentliche Bootstrap-Relays – nur für initialen Peer-Discovery */
-const BOOTSTRAP_RELAYS = [
-  'https://gun-manhattan.herokuapp.com/gun',
-  'https://peer.wallie.io/gun',
-];
-
-/** GUN-Namespace für PeoplesEyes – isoliert von anderen Apps */
 const GUN_NAMESPACE = 'peopleseyes_v1_cells';
 
 export type CellUpdateCallback = (aggregate: CellAggregate) => void;
 
+function aggregateSignatureInput(
+  aggregate: Omit<CellAggregate, 'signature' | 'signerPublicKey'>,
+): string {
+  return [
+    aggregate.cellId,
+    aggregate.reportCount,
+    aggregate.dominantActivityType,
+    aggregate.dominantAuthorityCategory,
+    aggregate.lastUpdatedHour,
+    aggregate.aggregateScore,
+  ].join('|');
+}
+
 export class P2PSyncService {
   private gun: GunInstance = null;
   private cellsNode: GunInstance = null;
+  private keypair: EphemeralKeypair | null = null;
+  private resolvedProxyUrl: string | null = null;
   private status: SyncStatus = {
     state: 'idle',
     connectedPeers: 0,
@@ -46,18 +51,29 @@ export class P2PSyncService {
   private subscribedCells = new Set<string>();
   private currentViewport: GeoBoundingBox | null = null;
   private globalCallbacks = new Set<CellUpdateCallback>();
-  /** BUG-05 fix: Guard gegen Mehrfach-Initialisierung */
   private initialized = false;
 
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+
     try {
-      // Dynamischer Import – GUN lädt nur wenn benötigt
+      this.keypair = await generateEphemeralKeypair();
+
+      const relayConfig = await resolveRelayConfig();
+      this.resolvedProxyUrl = relayConfig.proxyUrl;
+
+      if (relayConfig.probeResults.length > 0) {
+        const reachable = relayConfig.probeResults.filter(result => result.reachable);
+        console.debug(
+          `[P2P] Relay-Probe: ${reachable.length}/${relayConfig.probeResults.length} erreichbar.`,
+        );
+      }
+
       const Gun = (await import('gun')).default;
 
       this.gun = Gun({
-        peers: BOOTSTRAP_RELAYS,
+        peers: relayConfig.peers,
         localStorage: false,
         radisk: false,
       });
@@ -81,10 +97,6 @@ export class P2PSyncService {
     }
   }
 
-  /**
-   * Aktualisiert den sichtbaren Kartenausschnitt.
-   * Zellen außerhalb werden nicht mehr aktiv abonniert.
-   */
   setViewport(bbox: GeoBoundingBox): void {
     this.currentViewport = bbox;
     for (const cellId of this.subscribedCells) {
@@ -94,14 +106,10 @@ export class P2PSyncService {
     }
   }
 
-  /**
-   * Veröffentlicht ein CellAggregate an alle Peers.
-   * Nur aggregierte Daten – keine Rohdaten, keine IDs.
-   */
-  publishCellAggregate(aggregate: CellAggregate): void {
+  async publishCellAggregate(aggregate: CellAggregate): Promise<void> {
     if (!this.cellsNode) return;
 
-    const payload = {
+    const corePayload = {
       cellId: aggregate.cellId,
       reportCount: aggregate.reportCount,
       dominantActivityType: aggregate.dominantActivityType,
@@ -110,12 +118,29 @@ export class P2PSyncService {
       aggregateScore: aggregate.aggregateScore,
     };
 
+    let signature: string | undefined;
+    let signerPublicKey: string | undefined;
+
+    if (this.keypair) {
+      try {
+        signature = await signMessage(
+          aggregateSignatureInput(corePayload),
+          this.keypair.privateKey,
+        );
+        signerPublicKey = this.keypair.publicKeyBase64;
+      } catch (err) {
+        console.warn('[P2P] Signierung fehlgeschlagen, sende unsigniert:', err);
+      }
+    }
+
+    const payload = {
+      ...corePayload,
+      ...(signature ? { signature, signerPublicKey } : {}),
+    };
+
     this.cellsNode.get(aggregate.cellId).put(payload);
   }
 
-  /**
-   * Abonniert eine Zelle – nur wenn sie im aktuellen Viewport liegt.
-   */
   subscribeToCell(cellId: string): void {
     if (!this.cellsNode) return;
     if (this.subscribedCells.has(cellId)) return;
@@ -124,30 +149,44 @@ export class P2PSyncService {
     this.subscribedCells.add(cellId);
 
     this.cellsNode.get(cellId).on((data: unknown) => {
-      // SEC-02 fix: strukturelle Validierung vor dem Akzeptieren von P2P-Daten
       if (!validateCellAggregate(data)) return;
-      const agg = data;
-
-      this.globalCallbacks.forEach(cb => cb(agg));
-      this.cellListeners.get(cellId)?.forEach(cb => cb(agg));
+      void this.verifyAndDispatch(data as CellAggregate);
     });
   }
 
-  /** Registriert einen globalen Callback für alle Zell-Updates */
+  private async verifyAndDispatch(aggregate: CellAggregate): Promise<void> {
+    if (!aggregate.signature || !aggregate.signerPublicKey) {
+      console.debug('[P2P] Unsigniertes Aggregat verworfen:', aggregate.cellId);
+      return;
+    }
+
+    const valid = await verifySignature(
+      aggregateSignatureInput(aggregate),
+      aggregate.signature,
+      aggregate.signerPublicKey,
+    );
+
+    if (!valid) {
+      console.warn('[P2P] Ungültige Signatur verworfen:', aggregate.cellId);
+      return;
+    }
+
+    this.globalCallbacks.forEach(callback => callback(aggregate));
+    this.cellListeners.get(aggregate.cellId)?.forEach(callback => callback(aggregate));
+  }
+
   onCellUpdate(callback: CellUpdateCallback): () => void {
     this.globalCallbacks.add(callback);
     return () => this.globalCallbacks.delete(callback);
   }
 
-  /**
-   * Abonniert Updates für eine bestimmte Zelle (Legacy-API für Web).
-   */
   subscribeToCellUpdates(cellId: string, callback: CellUpdateCallback): () => void {
     if (!this.cellListeners.has(cellId)) {
       this.cellListeners.set(cellId, new Set());
       this.subscribeToCell(cellId);
     }
-    this.cellListeners.get(cellId)!.add(callback);
+
+    this.cellListeners.get(cellId)?.add(callback);
     return () => {
       this.cellListeners.get(cellId)?.delete(callback);
     };
@@ -162,9 +201,13 @@ export class P2PSyncService {
     return this.status;
   }
 
+  getProxyUrl(): string | null {
+    return this.resolvedProxyUrl;
+  }
+
   private updateStatus(patch: Partial<SyncStatus>): void {
     this.status = { ...this.status, ...patch };
-    this.listeners.forEach(l => l(this.status));
+    this.listeners.forEach(listener => listener(this.status));
   }
 
   destroy(): void {
@@ -173,9 +216,10 @@ export class P2PSyncService {
     this.listeners.clear();
     this.subscribedCells.clear();
     this.globalCallbacks.clear();
+    this.keypair = null;
+    this.resolvedProxyUrl = null;
     this.initialized = false;
   }
 }
 
-/** Singleton-Instanz */
 export const p2pSync = new P2PSyncService();

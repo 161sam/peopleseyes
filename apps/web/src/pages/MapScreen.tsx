@@ -4,9 +4,11 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CellAggregate } from '@peopleseyes/core-model';
 import { getCellBoundary, getCellCenter, scoreToColor } from '@peopleseyes/core-logic';
 import { useReports } from '../hooks/useReports.js';
+import { useTimelineFilter } from '../hooks/useTimelineFilter.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
 import { p2pSync } from '../services/p2p-sync.js';
+import { TimelineSlider } from '../components/TimelineSlider.js';
 import type { GeoProps } from '../App.js';
 
 interface MapScreenProps {
@@ -22,6 +24,7 @@ const MapScreen: React.FC<MapScreenProps> = ({ geoProps }) => {
   const [selectedCell, setSelectedCell] = useState<CellAggregate | null>(null);
   const { settings } = useUserSettings();
   const { t } = useI18n(settings.locale);
+  const timeline = useTimelineFilter(aggregates);
 
   // Karte initialisieren
   useEffect(() => {
@@ -123,13 +126,13 @@ const MapScreen: React.FC<MapScreenProps> = ({ geoProps }) => {
   useEffect(() => {
     if (!map.current) return;
     if (map.current.isStyleLoaded()) {
-      renderAggregates(aggregates);
+      renderAggregates(timeline.filteredAggregates);
     } else {
-      const onLoad = () => renderAggregates(aggregates);
+      const onLoad = () => renderAggregates(timeline.filteredAggregates);
       map.current.once('load', onLoad);
       return () => { map.current?.off('load', onLoad); };
     }
-  }, [aggregates, renderAggregates]);
+  }, [renderAggregates, timeline.filteredAggregates]);
 
   useEffect(() => {
     if (!map.current || !rawCoords || centeredRef.current) return;
@@ -166,12 +169,14 @@ const MapScreen: React.FC<MapScreenProps> = ({ geoProps }) => {
             {label}
           </div>
         ))}
-        {aggregates.length > 0 && (
+        {timeline.filteredAggregates.length > 0 && (
           <div className="pt-1.5 border-t border-slate-700 text-slate-400">
-            {aggregates.length} aktive Zellen
+            {timeline.filteredAggregates.length} aktive Zellen
           </div>
         )}
       </div>
+
+      <TimelineSlider timeline={timeline} />
 
       {/* Zell-Detail-Popup */}
       {selectedCell && (
@@ -202,4 +207,3 @@ const MapScreen: React.FC<MapScreenProps> = ({ geoProps }) => {
 };
 
 export default MapScreen;
-

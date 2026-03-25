@@ -91,6 +91,10 @@ export interface CellAggregate {
    * Rein lokal/clientseitig – kein Server-Wert.
    */
   readonly aggregateScore: number;
+  /** Optionale ECDSA-Signatur für P2P-Integrität */
+  readonly signature?: string;
+  /** Öffentlicher Schlüssel des signierenden Peers */
+  readonly signerPublicKey?: string;
 }
 
 /**

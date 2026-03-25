@@ -10,6 +10,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt'],
       manifest: {
@@ -26,18 +29,8 @@ export default defineConfig({
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/tiles\.openfreemap\.org\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'map-tiles',
-              expiration: { maxEntries: 300, maxAgeSeconds: 7 * 24 * 60 * 60 },
-            },
-          },
-        ],
       },
     }),
   ],

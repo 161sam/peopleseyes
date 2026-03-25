@@ -1,0 +1,53 @@
+services:
+  headscale:
+    image: headscale/headscale:0.23
+    command: serve
+    volumes:
+      - ./headscale/config.yaml:/etc/headscale/config.yaml:ro
+      - headscale-data:/var/lib/headscale
+    ports:
+      - "443:8080"
+      - "3478:3478/udp"
+    restart: unless-stopped
+    networks:
+      - relay-internal
+    healthcheck:
+      test: ["CMD", "headscale", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  gun-relay:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      - RELAY_BIND_IP=${TAILSCALE_IP:-100.64.0.1}
+      - RELAY_PORT=8765
+    command: >
+      sh -c "npm install gun@0.2020.1240 --no-save && node -e \"
+        const Gun = require('gun');
+        const http = require('http');
+        const bindIp = process.env.RELAY_BIND_IP || '100.64.0.1';
+        const port = parseInt(process.env.RELAY_PORT || '8765');
+        const server = http.createServer(Gun.serve('/app'));
+        server.listen(port, bindIp, () =>
+          console.log('GUN relay listening on ' + bindIp + ':' + port)
+        );
+        new Gun({ web: server, radisk: false, localStorage: false });
+      \""
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://${TAILSCALE_IP:-100.64.0.1}:8765/gun || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - "com.peopleseyes.service=headscale-gun-relay"
+
+volumes:
+  headscale-data:
+
+networks:
+  relay-internal:
+    driver: bridge

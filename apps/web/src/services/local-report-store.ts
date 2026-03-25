@@ -71,7 +71,7 @@ export class LocalReportStore {
       .concat(report);
 
     const aggregate = aggregateReportsForCell(report.position.cellId, cellReports);
-    p2pSync.publishCellAggregate(aggregate);
+    await p2pSync.publishCellAggregate(aggregate);
   }
 
   /** Lädt alle lokalen Reports – ungültige Einträge werden verworfen (Fehler 5 fix) */
