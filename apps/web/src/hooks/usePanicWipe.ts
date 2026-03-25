@@ -5,9 +5,11 @@
  * das den zurückgegebenen Handler verwendet.
  *
  * Löscht:
- * - IndexedDB 'peopleseyes' (lokale Reports)
+ * - OPFS reports/-Verzeichnis (verschlüsselte Report-Dateien)
+ * - OPFS pe_salt (Salt für Schlüsselableitung)
  * - sessionStorage (Offline-Queue, temporäre Daten)
  * - localStorage (Einstellungen)
+ * - IndexedDB 'peopleseyes' (Legacy-Daten, Fallback)
  *
  * Nach dem Wipe: harter Reload damit React-State und GUN-Instanz
  * ebenfalls zurückgesetzt werden.
@@ -29,7 +31,7 @@ async function wipeAllLocalData(): Promise<void> {
   // 2. localStorage
   try { localStorage.clear(); } catch { /* ignorieren */ }
 
-  // 3. IndexedDB – alle bekannten Datenbanken
+  // 3. IndexedDB – alle bekannten Datenbanken (Legacy-Fallback)
   const dbsToDelete = ['peopleseyes'];
   await Promise.allSettled(
     dbsToDelete.map(
@@ -43,7 +45,18 @@ async function wipeAllLocalData(): Promise<void> {
     ),
   );
 
-  // 4. Cache Storage (Service Worker Caches)
+  // 4. OPFS – verschlüsselte Report-Dateien + Salt löschen
+  try {
+    if ('storage' in navigator && typeof navigator.storage.getDirectory === 'function') {
+      const root = await navigator.storage.getDirectory();
+      await Promise.allSettled([
+        root.removeEntry('reports', { recursive: true }),
+        root.removeEntry('pe_salt'),
+      ]);
+    }
+  } catch { /* ignorieren */ }
+
+  // 5. Cache Storage (Service Worker Caches)
   try {
     if ('caches' in globalThis) {
       const keys = await caches.keys();

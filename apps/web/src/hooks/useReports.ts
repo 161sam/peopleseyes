@@ -21,7 +21,7 @@ export function useReports(): UseReportsReturn {
 
     const init = async () => {
       try {
-        await localReportStore.init();
+        // localReportStore ist bereits durch useStoragePin in App.tsx initialisiert
         await p2pSync.init();
 
         if (!mounted) return;
