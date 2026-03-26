@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { H3Resolution } from '@peopleseyes/core-model';
 import type { SupportedLocale, Report } from '@peopleseyes/core-model';
+import { NGO_CONTACTS, ngoColorClasses } from '../data/ngo-contacts.js';
 import { localReportStore } from '../services/local-report-store.js';
 import { generateCerfFeed } from '../services/cerf-feed-generator.js';
 import { isRtlLocale } from '@peopleseyes/core-i18n';
@@ -23,7 +24,16 @@ export const RightsScreen: React.FC = () => {
   const [simulationActive, setSimulationActive] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const isRtl = isRtlLocale(settings.locale);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+  }, []);
 
   const allTopics = [
     { key: 'identityControl', data: topics.identityControl },
@@ -34,6 +44,16 @@ export const RightsScreen: React.FC = () => {
   ] as const;
 
   const q = searchQuery.trim().toLowerCase();
+
+  const filteredNgos = q
+    ? NGO_CONTACTS.filter(ngo =>
+        ngo.name.toLowerCase().includes(q) ||
+        ngo.description.toLowerCase().includes(q) ||
+        ngo.descriptionEn.toLowerCase().includes(q) ||
+        ngo.tags.some(tag => tag.toLowerCase().includes(q)),
+      )
+    : NGO_CONTACTS;
+
   const topicList = q
     ? allTopics.filter(({ data }) =>
         data.title.toLowerCase().includes(q) ||
@@ -41,6 +61,12 @@ export const RightsScreen: React.FC = () => {
         data.keyPoints.some(p => p.toLowerCase().includes(q)),
       )
     : allTopics;
+
+  const hasNoResults = q && filteredNgos.length === 0 && topicList.length === 0;
+
+  const hotlineNgos = filteredNgos.filter(ngo => ngo.phone);
+  const descriptionForLocale = (ngo: (typeof NGO_CONTACTS)[number]) =>
+    settings.locale === 'de' ? ngo.description : ngo.descriptionEn;
 
   if (simulationActive) {
     return (
@@ -55,9 +81,17 @@ export const RightsScreen: React.FC = () => {
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-3">
-      <h1 className="text-lg font-medium text-slate-100 mb-1">{t.rights.title}</h1>
+      <div className="flex items-center gap-2 mb-1">
+        <h1 className="text-lg font-medium text-slate-100">{t.rights.title}</h1>
+        {!isOnline && (
+          <span className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">
+            Offline verfügbar
+          </span>
+        )}
+      </div>
       <p className="text-xs text-slate-500 leading-relaxed mb-4">{t.rights.disclaimer}</p>
 
+      {/* Suchfeld */}
       <input
         type="search"
         value={searchQuery}
@@ -66,46 +100,118 @@ export const RightsScreen: React.FC = () => {
         className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500"
       />
 
-      {topicList.map(({ key, data }) => (
-        <div key={key} className="bg-slate-800 rounded-xl overflow-hidden">
-          <button
-            onClick={() => setOpen(open === key ? null : key)}
-            className="w-full flex items-center justify-between px-4 py-4 text-left"
-          >
-            <span className="text-sm font-medium text-slate-200">{data.title}</span>
-            <span className={`text-slate-400 transition-transform text-xs ${open === key ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-          {open === key && (
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-700">
-              <p className="text-sm text-slate-300 pt-3 leading-relaxed">{data.summary}</p>
-              <ul className="space-y-2">
-                {data.keyPoints.map((point, i) => (
-                  <li key={i} className="flex gap-2 text-xs text-slate-400 leading-relaxed">
-                    <span className="text-blue-400 flex-shrink-0 mt-0.5">→</span>
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+      {/* Keine Ergebnisse */}
+      {hasNoResults && (
+        <p className="text-sm text-slate-500 text-center py-4">
+          Keine Treffer — tippe weniger Buchstaben
+        </p>
+      )}
+
+      {/* Sofortkontakte (nur NGOs mit Telefon) */}
+      {hotlineNgos.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide px-1">
+            Sofortkontakte
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {hotlineNgos.map(ngo => (
+              <a
+                key={ngo.id}
+                href={`tel:${ngo.phone!.replace(/\s/g, '')}`}
+                className={`rounded-xl border p-3 flex flex-col gap-1 transition-colors hover:opacity-80 ${ngoColorClasses(ngo.color)}`}
+              >
+                <span className="text-xs font-semibold leading-tight">{ngo.name}</span>
+                {ngo.phoneLabel && (
+                  <span className="text-xs opacity-70">{ngo.phoneLabel}</span>
+                )}
+                <span className="text-xs font-mono opacity-90 mt-0.5">{ngo.phone}</span>
+              </a>
+            ))}
+          </div>
         </div>
-      ))}
+      )}
+
+      {/* Organisationen */}
+      {filteredNgos.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide px-1">
+            Organisationen
+          </p>
+          {filteredNgos.map(ngo => (
+            <a
+              key={ngo.id}
+              href={ngo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3 hover:bg-slate-700/80 transition-colors"
+            >
+              <div
+                className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold border ${ngoColorClasses(ngo.color)}`}
+              >
+                {ngo.name.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-200 leading-tight">{ngo.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                  {descriptionForLocale(ngo)}
+                </p>
+              </div>
+              <span className="text-slate-600 flex-shrink-0 text-sm">↗</span>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Deine Rechte — Topics */}
+      {topicList.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide px-1">
+            Deine Rechte
+          </p>
+          {topicList.map(({ key, data }) => (
+            <div key={key} className="bg-slate-800 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setOpen(open === key ? null : key)}
+                className="w-full flex items-center justify-between px-4 py-4 text-left"
+              >
+                <span className="text-sm font-medium text-slate-200">{data.title}</span>
+                <span className={`text-slate-400 transition-transform text-xs ${open === key ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              {open === key && (
+                <div className="px-4 pb-4 space-y-3 border-t border-slate-700">
+                  <p className="text-sm text-slate-300 pt-3 leading-relaxed">{data.summary}</p>
+                  <ul className="space-y-2">
+                    {data.keyPoints.map((point, i) => (
+                      <li key={i} className="flex gap-2 text-xs text-slate-400 leading-relaxed">
+                        <span className="text-blue-400 flex-shrink-0 mt-0.5">→</span>
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Situationen üben — Button */}
-      <div className="mt-2">
-        <button
-          onClick={() => setSimulationActive(true)}
-          className="w-full bg-blue-600/10 border border-blue-600/30 hover:bg-blue-600/20 rounded-xl px-4 py-4 text-left flex items-center justify-between transition-colors"
-        >
-          <div>
-            <p className="text-sm font-medium text-blue-300">{t.simulations.title}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{t.simulations.subtitle}</p>
-          </div>
-          <span className="text-blue-400">→</span>
-        </button>
-      </div>
+      {!q && (
+        <div className="mt-2">
+          <button
+            onClick={() => setSimulationActive(true)}
+            className="w-full bg-blue-600/10 border border-blue-600/30 hover:bg-blue-600/20 rounded-xl px-4 py-4 text-left flex items-center justify-between transition-colors"
+          >
+            <div>
+              <p className="text-sm font-medium text-blue-300">{t.simulations.title}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{t.simulations.subtitle}</p>
+            </div>
+            <span className="text-blue-400">→</span>
+          </button>
+        </div>
+      )}
 
       {/* Floating Chat-Button */}
       <button

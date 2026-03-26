@@ -16,7 +16,7 @@ import {
   H3Resolution,
 } from '@peopleseyes/core-model';
 import type { SupportedLocale } from '@peopleseyes/core-model';
-import { createReport } from '@peopleseyes/core-logic';
+import { createReport, ACTIVITY_TO_AUTHORITY_HINTS } from '@peopleseyes/core-logic';
 import { getTranslations } from '@peopleseyes/core-i18n';
 import { useNativeReports } from '../hooks/useNativeReports.js';
 import { useNativeLocation } from '../hooks/useNativeLocation.js';
@@ -71,8 +71,25 @@ function useSettings() {
   return { locale, resolution, persistEvidence, setLocale, setResolution, setPersistEvidence, loaded };
 }
 
-// ─── Authority-Gruppen ─────────────────────────────────────────────────────────
+// ─── Activity Tiles (mobile-native, kein shared component) ────────────────────
 
+interface ActivityTile {
+  activity: ObservedActivityType;
+  icon: string;
+}
+
+const MOBILE_ACTIVITY_TILES: ActivityTile[] = [
+  { activity: ObservedActivityType.StationaereKontrolle,  icon: '🛑' },
+  { activity: ObservedActivityType.Identitaetskontrolle,  icon: '🪪' },
+  { activity: ObservedActivityType.Fahrzeugkontrolle,     icon: '🚗' },
+  { activity: ObservedActivityType.Patrouille,            icon: '👮' },
+  { activity: ObservedActivityType.Zugriff,               icon: '⛓' },
+  { activity: ObservedActivityType.Transport,             icon: '🚐' },
+  { activity: ObservedActivityType.DurchsuchungGebaeude,  icon: '🏠' },
+  { activity: ObservedActivityType.Sonstiges,             icon: '❓' },
+];
+
+// Authority-Gruppen für "Alle anzeigen"-Fallback
 type AuthorityGroup = 'federal' | 'state' | 'immigration' | 'frontex';
 
 const GROUP_CATEGORIES: Record<AuthorityGroup, AuthorityCategory[]> = {
@@ -110,18 +127,23 @@ const GROUP_ICONS: Record<AuthorityGroup, string> = {
 
 const GROUPS: AuthorityGroup[] = ['federal', 'state', 'immigration', 'frontex'];
 
-const ACTIVITY_GROUP_CONTROL = [
-  ObservedActivityType.Identitaetskontrolle,
-  ObservedActivityType.StationaereKontrolle,
-  ObservedActivityType.Fahrzeugkontrolle,
-];
-const ACTIVITY_GROUP_OPERATION = [
-  ObservedActivityType.Patrouille,
-  ObservedActivityType.Zugriff,
-  ObservedActivityType.Transport,
-  ObservedActivityType.DurchsuchungGebaeude,
-  ObservedActivityType.Sonstiges,
-];
+const COMBINED_CONFIDENCE_OPTIONS = [
+  {
+    label: 'Ich habe es direkt gesehen — Behörde klar erkennbar',
+    confidence: ObservationConfidence.Direkt,
+    visibility: AuthorityVisibility.EindeutigErkennbar,
+  },
+  {
+    label: 'Ich habe es direkt gesehen — nicht sicher wer',
+    confidence: ObservationConfidence.Direkt,
+    visibility: AuthorityVisibility.Unklar,
+  },
+  {
+    label: 'Jemand hat es mir erzählt',
+    confidence: ObservationConfidence.Weitergeleitet,
+    visibility: AuthorityVisibility.Unklar,
+  },
+] as const;
 
 function normalize(str: string): string {
   return str.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -129,30 +151,33 @@ function normalize(str: string): string {
 
 // ─── ReportScreen ─────────────────────────────────────────────────────────────
 
-type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
+type Step = 'context' | 'activity' | 'authority' | 'confidence' | 'timing' | 'description' | 'confirm' | 'success';
 
-const VISIBILITY_LABELS: Record<AuthorityVisibility, string> = {
-  [AuthorityVisibility.EindeutigErkennbar]: 'Eindeutig erkennbar (Uniform / Fahrzeug)',
-  [AuthorityVisibility.Zivil]: 'Zivil gekleidet, aber identifizierbar',
-  [AuthorityVisibility.Unklar]: 'Nicht sicher zuzuordnen',
-};
-
-const STEPS_ORDER: Step[] = ['authority', 'visibility', 'activity', 'confidence', 'description', 'confirm'];
+const ALL_STEPS: Step[] = ['context', 'activity', 'authority', 'confidence', 'timing', 'description', 'confirm'];
 
 export const ReportScreen: React.FC = () => {
   const { locale } = useSettings();
   const t = getTranslations(locale);
   const { addReport } = useNativeReports();
   const { rawCoords } = useNativeLocation();
-  const [step, setStep] = useState<Step>('authority');
-  const [authority, setAuthority] = useState<AuthorityCategory | null>(null);
-  const [activeGroup, setActiveGroup] = useState<AuthorityGroup | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [visibility, setVisibility] = useState<AuthorityVisibility | null>(null);
+
+  const [activeSteps, setActiveSteps] = useState<Step[]>(ALL_STEPS);
+  const [step, setStep] = useState<Step>('context');
   const [activity, setActivity] = useState<ObservedActivityType | null>(null);
+  const [authority, setAuthority] = useState<AuthorityCategory | null>(null);
   const [confidence, setConfidence] = useState<ObservationConfidence | null>(null);
+  const [visibility, setVisibility] = useState<AuthorityVisibility | null>(null);
+  const [timingOffsetMinutes, setTimingOffsetMinutes] = useState<0 | 15 | 60>(0);
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // "Alle Behörden anzeigen" Fallback
+  const [showAllAuthorities, setShowAllAuthorities] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<AuthorityGroup | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const currentIdx = activeSteps.indexOf(step);
+
+  const hintAuthorities = activity ? ACTIVITY_TO_AUTHORITY_HINTS[activity] : [];
 
   const allCategories = useMemo(() => Object.values(AuthorityCategory), []);
   const searchResults = useMemo(() => {
@@ -161,37 +186,54 @@ export const ReportScreen: React.FC = () => {
     return allCategories.filter(cat => normalize(t.authority[cat]).includes(needle));
   }, [searchQuery, allCategories, t]);
 
-  const handleGroupPress = (group: AuthorityGroup) => {
-    const cats = GROUP_CATEGORIES[group];
-    if (cats.length === 1 && cats[0] !== undefined) {
-      setAuthority(cats[0]);
-      goNext();
-    } else {
-      setActiveGroup(prev => (prev === group ? null : group));
+  const goNextFrom = (currentStep: Step) => {
+    const idx = activeSteps.indexOf(currentStep);
+    if (idx < activeSteps.length - 1) setStep(activeSteps[idx + 1]!);
+  };
+
+  const goBack = () => {
+    if (currentIdx > 0) setStep(activeSteps[currentIdx - 1]!);
+  };
+
+  const handleContextSelect = (ctx: 'affected' | 'witness') => {
+    if (ctx === 'affected') {
+      setConfidence(ObservationConfidence.Direkt);
+      setVisibility(AuthorityVisibility.EindeutigErkennbar);
+      setActiveSteps(prev => prev.filter(s => s !== 'confidence'));
     }
+    goNextFrom('context');
+  };
+
+  const handleActivitySelect = (act: ObservedActivityType) => {
+    setActivity(act);
+    setShowAllAuthorities(false);
+    setActiveGroup(null);
+    setSearchQuery('');
+    goNextFrom('activity');
   };
 
   const handleAuthoritySelect = (cat: AuthorityCategory) => {
     setAuthority(cat);
-    setSearchQuery('');
+    setShowAllAuthorities(false);
     setActiveGroup(null);
-    goNext();
+    setSearchQuery('');
+    goNextFrom('authority');
   };
 
-  const goNext = () => {
-    const idx = STEPS_ORDER.indexOf(step);
-    if (idx < STEPS_ORDER.length - 1) setStep(STEPS_ORDER[idx + 1]!);
-  };
-
-  const goBack = () => {
-    const idx = STEPS_ORDER.indexOf(step);
-    if (idx > 0) setStep(STEPS_ORDER[idx - 1]!);
+  const groupLabel = (group: AuthorityGroup): string => {
+    switch (group) {
+      case 'federal':     return t.report.groupFederal;
+      case 'state':       return t.report.groupState;
+      case 'immigration': return t.report.groupImmigration;
+      case 'frontex':     return t.report.groupFrontex;
+    }
   };
 
   const handleSubmit = async () => {
     if (!authority || !visibility || !activity || !confidence) return;
     setIsSubmitting(true);
     try {
+      const nowMs = Date.now() - timingOffsetMinutes * 60_000;
       const draft = {
         lat: rawCoords?.lat ?? 51.3,
         lng: rawCoords?.lng ?? 10.0,
@@ -202,22 +244,13 @@ export const ReportScreen: React.FC = () => {
         ...(description.trim() ? { description: description.trim() } : {}),
         resolution: H3Resolution.Viertel,
       };
-      const report = createReport(draft);
+      const report = createReport(draft, nowMs);
       await addReport(report);
       setStep('success');
     } catch (err) {
       Alert.alert('Fehler', err instanceof Error ? err.message : 'Melden fehlgeschlagen');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const groupLabel = (group: AuthorityGroup): string => {
-    switch (group) {
-      case 'federal':    return t.report.groupFederal;
-      case 'state':      return t.report.groupState;
-      case 'immigration': return t.report.groupImmigration;
-      case 'frontex':    return t.report.groupFrontex;
     }
   };
 
@@ -228,9 +261,12 @@ export const ReportScreen: React.FC = () => {
         <Text style={s.h2}>Anonym gemeldet</Text>
         <Text style={s.muted}>{t.report.successMessage}</Text>
         <TouchableOpacity style={s.btn} onPress={() => {
-          setStep('authority'); setAuthority(null); setVisibility(null);
-          setActivity(null); setConfidence(null); setDescription('');
-          setActiveGroup(null); setSearchQuery('');
+          setActiveSteps(ALL_STEPS);
+          setStep('context');
+          setActivity(null); setAuthority(null);
+          setConfidence(null); setVisibility(null);
+          setDescription(''); setTimingOffsetMinutes(0);
+          setShowAllAuthorities(false); setActiveGroup(null); setSearchQuery('');
         }}>
           <Text style={s.btnText}>Neue Meldung</Text>
         </TouchableOpacity>
@@ -243,27 +279,63 @@ export const ReportScreen: React.FC = () => {
       <Text style={s.h1}>{t.report.title}</Text>
       <Text style={s.subtitle}>{t.report.subtitle}</Text>
 
-      {/* Schritt 1: Behörde – zweistufig mit Suche */}
+      {/* Schritt: context */}
+      {step === 'context' && (
+        <>
+          <Text style={s.stepLabel}>{t.report.stepContext}</Text>
+          <View style={s.groupGrid}>
+            <TouchableOpacity
+              style={[s.groupTile, { minHeight: 100 }]}
+              onPress={() => handleContextSelect('affected')}
+            >
+              <Text style={s.groupIcon}>🙋</Text>
+              <Text style={s.groupLabel}>{t.report.contextAffected}</Text>
+              <Text style={[s.groupLabel, { fontSize: 10, color: '#475569' }]}>{t.report.contextAffectedSub}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.groupTile, { minHeight: 100 }]}
+              onPress={() => handleContextSelect('witness')}
+            >
+              <Text style={s.groupIcon}>👁</Text>
+              <Text style={s.groupLabel}>{t.report.contextWitness}</Text>
+              <Text style={[s.groupLabel, { fontSize: 10, color: '#475569' }]}>{t.report.contextWitnessSub}</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* Schritt: activity */}
+      {step === 'activity' && (
+        <>
+          <Text style={s.stepLabel}>{t.report.stepActivity}</Text>
+          <View style={s.groupGrid}>
+            {MOBILE_ACTIVITY_TILES.map(({ activity: act, icon }) => (
+              <TouchableOpacity
+                key={act}
+                style={[s.groupTile, activity === act && s.groupTileActive]}
+                onPress={() => handleActivitySelect(act)}
+              >
+                <Text style={s.groupIcon}>{icon}</Text>
+                <Text style={[s.groupLabel, activity === act && s.groupLabelActive]}>
+                  {t.activity[act]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
+
+      {/* Schritt: authority */}
       {step === 'authority' && (
         <>
-          <Text style={s.stepLabel}>{t.report.step.authority}</Text>
+          <Text style={s.stepLabel}>{t.report.stepAuthority}</Text>
 
-          <TextInput
-            style={s.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={t.report.searchAuthority}
-            placeholderTextColor="#475569"
-            returnKeyType="search"
-          />
-
-          {searchResults !== null ? (
-            // Suchergebnisse
+          {!showAllAuthorities ? (
             <>
-              {searchResults.length === 0 ? (
-                <Text style={s.hint}>{t.common.unknown}</Text>
-              ) : (
-                searchResults.map(cat => (
+              {/* Priorisierte Hints */}
+              {hintAuthorities
+                .filter(cat => cat !== AuthorityCategory.Unbekannt)
+                .map(cat => (
                   <TouchableOpacity
                     key={cat}
                     style={[s.option, authority === cat && s.optionSelected]}
@@ -273,118 +345,157 @@ export const ReportScreen: React.FC = () => {
                       {t.authority[cat]}
                     </Text>
                   </TouchableOpacity>
-                ))
-              )}
-            </>
-          ) : (
-            // Gruppen-Kacheln
-            <>
-              <View style={s.groupGrid}>
-                {GROUPS.map(group => (
-                  <TouchableOpacity
-                    key={group}
-                    style={[s.groupTile, activeGroup === group && s.groupTileActive]}
-                    onPress={() => handleGroupPress(group)}
-                  >
-                    <Text style={s.groupIcon}>{GROUP_ICONS[group]}</Text>
-                    <Text style={[s.groupLabel, activeGroup === group && s.groupLabelActive]}>
-                      {groupLabel(group)}
-                    </Text>
-                  </TouchableOpacity>
                 ))}
-              </View>
 
-              {/* Unterkategorien der gewählten Gruppe */}
-              {activeGroup && GROUP_CATEGORIES[activeGroup].map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[s.option, authority === cat && s.optionSelected]}
-                  onPress={() => handleAuthoritySelect(cat)}
-                >
-                  <Text style={[s.optionText, authority === cat && s.optionTextSelected]}>
-                    {t.authority[cat]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-
-              {/* Schnellauswahl: Unbekannt */}
+              {/* Unbekannt immer sichtbar */}
               <TouchableOpacity
-                style={s.unknownBtn}
+                style={[s.option, authority === AuthorityCategory.Unbekannt && s.optionSelected]}
                 onPress={() => handleAuthoritySelect(AuthorityCategory.Unbekannt)}
               >
-                <Text style={s.unknownBtnText}>{t.report.unknownAuthority}</Text>
+                <Text style={[s.optionText, authority === AuthorityCategory.Unbekannt && s.optionTextSelected]}>
+                  ❓ {t.report.authorityUnknownLabel}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Alle anzeigen */}
+              <TouchableOpacity
+                style={s.unknownBtn}
+                onPress={() => setShowAllAuthorities(true)}
+              >
+                <Text style={s.unknownBtnText}>{t.report.authorityShowAll}</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {/* Suche */}
+              <TextInput
+                style={s.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder={t.report.searchAuthority}
+                placeholderTextColor="#475569"
+                returnKeyType="search"
+              />
+
+              {searchResults !== null ? (
+                searchResults.length === 0 ? (
+                  <Text style={s.hint}>{t.common.unknown}</Text>
+                ) : (
+                  searchResults.map(cat => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[s.option, authority === cat && s.optionSelected]}
+                      onPress={() => handleAuthoritySelect(cat)}
+                    >
+                      <Text style={[s.optionText, authority === cat && s.optionTextSelected]}>
+                        {t.authority[cat]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )
+              ) : (
+                <>
+                  <View style={s.groupGrid}>
+                    {GROUPS.map(group => (
+                      <TouchableOpacity
+                        key={group}
+                        style={[s.groupTile, activeGroup === group && s.groupTileActive]}
+                        onPress={() => setActiveGroup(prev => (prev === group ? null : group))}
+                      >
+                        <Text style={s.groupIcon}>{GROUP_ICONS[group]}</Text>
+                        <Text style={[s.groupLabel, activeGroup === group && s.groupLabelActive]}>
+                          {groupLabel(group)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {activeGroup && GROUP_CATEGORIES[activeGroup].map(cat => (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[s.option, authority === cat && s.optionSelected]}
+                      onPress={() => handleAuthoritySelect(cat)}
+                    >
+                      <Text style={[s.optionText, authority === cat && s.optionTextSelected]}>
+                        {t.authority[cat]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={s.unknownBtn}
+                    onPress={() => handleAuthoritySelect(AuthorityCategory.Unbekannt)}
+                  >
+                    <Text style={s.unknownBtnText}>{t.report.unknownAuthority}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <TouchableOpacity
+                style={s.unknownBtn}
+                onPress={() => { setShowAllAuthorities(false); setActiveGroup(null); setSearchQuery(''); }}
+              >
+                <Text style={[s.unknownBtnText, { color: '#3b82f6' }]}>← Zurück</Text>
               </TouchableOpacity>
             </>
           )}
         </>
       )}
 
-      {/* Schritt 2: Erkennbarkeit */}
-      {step === 'visibility' && (
-        <>
-          <Text style={s.stepLabel}>Wie erkennbar war die Behörde?</Text>
-          {Object.values(AuthorityVisibility).map(vis => (
-            <TouchableOpacity
-              key={vis}
-              style={[s.option, visibility === vis && s.optionSelected]}
-              onPress={() => { setVisibility(vis); goNext(); }}
-            >
-              <Text style={[s.optionText, visibility === vis && s.optionTextSelected]}>
-                {VISIBILITY_LABELS[vis]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </>
-      )}
-
-      {/* Schritt 3: Aktivität – mit Gruppen */}
-      {step === 'activity' && (
-        <>
-          <Text style={s.stepLabel}>{t.report.step.activity}</Text>
-
-          <Text style={s.groupHeading}>{t.report.activityGroupControl}</Text>
-          {ACTIVITY_GROUP_CONTROL.map(act => (
-            <TouchableOpacity
-              key={act}
-              style={[s.option, activity === act && s.optionSelected]}
-              onPress={() => { setActivity(act); goNext(); }}
-            >
-              <Text style={[s.optionText, activity === act && s.optionTextSelected]}>{t.activity[act]}</Text>
-            </TouchableOpacity>
-          ))}
-
-          <Text style={[s.groupHeading, { marginTop: 8 }]}>{t.report.activityGroupOperation}</Text>
-          {ACTIVITY_GROUP_OPERATION.map(act => (
-            <TouchableOpacity
-              key={act}
-              style={[s.option, activity === act && s.optionSelected]}
-              onPress={() => { setActivity(act); goNext(); }}
-            >
-              <Text style={[s.optionText, activity === act && s.optionTextSelected]}>{t.activity[act]}</Text>
-            </TouchableOpacity>
-          ))}
-        </>
-      )}
-
-      {/* Schritt 4: Confidence */}
+      {/* Schritt: confidence (kombiniert) */}
       {step === 'confidence' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.confidence}</Text>
-          {Object.values(ObservationConfidence).map(conf => (
-            <TouchableOpacity
-              key={conf}
-              style={[s.option, confidence === conf && s.optionSelected]}
-              onPress={() => { setConfidence(conf); goNext(); }}
-            >
-              <Text style={[s.optionText, confidence === conf && s.optionTextSelected]}>
-                {t.confidence[conf]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {COMBINED_CONFIDENCE_OPTIONS.map(opt => {
+            const isSelected = confidence === opt.confidence && visibility === opt.visibility;
+            return (
+              <TouchableOpacity
+                key={`${opt.confidence}-${opt.visibility}`}
+                style={[s.option, isSelected && s.optionSelected]}
+                onPress={() => {
+                  setConfidence(opt.confidence);
+                  setVisibility(opt.visibility);
+                  goNextFrom('confidence');
+                }}
+              >
+                <Text style={[s.optionText, isSelected && s.optionTextSelected]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </>
       )}
 
-      {/* Schritt 5: Beschreibung */}
+      {/* Schritt: timing */}
+      {step === 'timing' && (
+        <>
+          <Text style={s.stepLabel}>{t.report.stepTiming}</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+            {([0, 15, 60] as const).map(offset => {
+              const label = offset === 0 ? t.report.timingNow : offset === 15 ? t.report.timing15 : t.report.timing60;
+              return (
+                <TouchableOpacity
+                  key={offset}
+                  style={[
+                    s.option,
+                    { flex: 1, alignItems: 'center', padding: 10 },
+                    timingOffsetMinutes === offset && s.optionSelected,
+                  ]}
+                  onPress={() => setTimingOffsetMinutes(offset)}
+                >
+                  <Text style={[s.optionText, timingOffsetMinutes === offset && s.optionTextSelected]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity style={s.btn} onPress={() => goNextFrom('timing')}>
+            <Text style={s.btnText}>{t.common.next}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {/* Schritt: description */}
       {step === 'description' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.description}</Text>
@@ -398,20 +509,25 @@ export const ReportScreen: React.FC = () => {
             numberOfLines={4}
           />
           <Text style={s.hint}>{description.length}/280 · {t.report.descriptionHint}</Text>
-          <TouchableOpacity style={s.btn} onPress={goNext}>
+          <TouchableOpacity style={s.btn} onPress={() => goNextFrom('description')}>
             <Text style={s.btnText}>{t.common.next}</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {/* Schritt 6: Bestätigen */}
+      {/* Schritt: confirm */}
       {step === 'confirm' && (
         <>
           <Text style={s.stepLabel}>{t.report.step.confirm}</Text>
-          {authority && <View style={s.row}><Text style={s.rowLabel}>{t.report.authorityLabel}</Text><Text style={s.rowValue}>{t.authority[authority]}</Text></View>}
-          {visibility && <View style={s.row}><Text style={s.rowLabel}>Erkennbarkeit</Text><Text style={s.rowValue}>{VISIBILITY_LABELS[visibility]}</Text></View>}
           {activity && <View style={s.row}><Text style={s.rowLabel}>{t.report.activityLabel}</Text><Text style={s.rowValue}>{t.activity[activity]}</Text></View>}
+          {authority && <View style={s.row}><Text style={s.rowLabel}>{t.report.authorityLabel}</Text><Text style={s.rowValue}>{t.authority[authority]}</Text></View>}
           {confidence && <View style={s.row}><Text style={s.rowLabel}>{t.report.confidenceLabel}</Text><Text style={s.rowValue}>{t.confidence[confidence]}</Text></View>}
+          {timingOffsetMinutes > 0 && (
+            <View style={s.row}>
+              <Text style={s.rowLabel}>{t.report.stepTiming}</Text>
+              <Text style={s.rowValue}>{timingOffsetMinutes === 15 ? t.report.timing15 : t.report.timing60}</Text>
+            </View>
+          )}
           <Text style={s.disclaimer}>{t.report.legalDisclaimer}</Text>
           <TouchableOpacity
             style={[s.btn, isSubmitting && s.btnDisabled]}
@@ -423,7 +539,8 @@ export const ReportScreen: React.FC = () => {
         </>
       )}
 
-      {step !== 'authority' && (
+      {/* Back button (nicht für auto-advance Schritte) */}
+      {step !== 'context' && (
         <TouchableOpacity style={s.backBtn} onPress={goBack}>
           <Text style={s.backBtnText}>{t.common.back}</Text>
         </TouchableOpacity>

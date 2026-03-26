@@ -2,12 +2,11 @@
  * QuickReportSheet – Bottom-Sheet für Eilmeldungen direkt von der Karte.
  *
  * 2-Schritt-Formular:
- *   Schritt 1: Behördengruppe (4 große Kacheln, KEINE Unterkategorie)
- *   Schritt 2: Aktivität (alle 8 als Pills, 2 Spalten)
+ *   Schritt 1: Aktivität (2×4 Icon-Grid via ActivityGrid)
+ *   Schritt 2: Behördengruppe (5 Kacheln inkl. Unbekannt)
  *
  * Confidence: automatisch ObservationConfidence.Direkt
  * AuthorityVisibility: automatisch AuthorityVisibility.EindeutigErkennbar
- * Unbekannte Gruppe → AuthorityCategory.Unbekannt
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -22,9 +21,10 @@ import { createReport } from '@peopleseyes/core-logic';
 import { useReports } from '../hooks/useReports.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
+import ActivityGrid from './ActivityGrid.js';
 import type { GeoProps } from '../App.js';
 
-type AuthorityGroup = 'federal' | 'state' | 'immigration' | 'frontex';
+type AuthorityGroup = 'federal' | 'state' | 'immigration' | 'frontex' | 'unknown';
 
 /** Repräsentative AuthorityCategory pro Gruppe für schnelle Meldung */
 const GROUP_TO_CATEGORY: Record<AuthorityGroup, AuthorityCategory> = {
@@ -32,6 +32,7 @@ const GROUP_TO_CATEGORY: Record<AuthorityGroup, AuthorityCategory> = {
   state:       AuthorityCategory.LandespolizeiAllgemein,
   immigration: AuthorityCategory.AuslaenderbehördeUnterkuenfte,
   frontex:     AuthorityCategory.FrontexPatrouille,
+  unknown:     AuthorityCategory.Unbekannt,
 };
 
 const GROUP_ICONS: Record<AuthorityGroup, string> = {
@@ -39,11 +40,10 @@ const GROUP_ICONS: Record<AuthorityGroup, string> = {
   state:       '🏛️',
   immigration: '📋',
   frontex:     '🇪🇺',
+  unknown:     '❓',
 };
 
-const GROUPS: AuthorityGroup[] = ['federal', 'state', 'immigration', 'frontex'];
-
-const ALL_ACTIVITIES: ObservedActivityType[] = Object.values(ObservedActivityType);
+const GROUPS: AuthorityGroup[] = ['federal', 'state', 'immigration', 'frontex', 'unknown'];
 
 interface QuickReportSheetProps {
   geoProps: GeoProps;
@@ -58,8 +58,8 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
 
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedGroup, setSelectedGroup] = useState<AuthorityGroup | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<ObservedActivityType | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<AuthorityGroup | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -81,8 +81,8 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
     setTimeout(onClose, 300);
   }, [onClose]);
 
-  const handleGroupSelect = (group: AuthorityGroup) => {
-    setSelectedGroup(group);
+  const handleActivitySelect = (activity: ObservedActivityType) => {
+    setSelectedActivity(activity);
     setStep(2);
   };
 
@@ -118,13 +118,13 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
   };
 
   const handleDetailedReport = () => {
-    if (!selectedGroup) return;
-    const authority = GROUP_TO_CATEGORY[selectedGroup];
+    if (!selectedActivity) return;
+    const authority = selectedGroup ? GROUP_TO_CATEGORY[selectedGroup] : undefined;
     handleClose();
     onNavigateToReport({
-      authority,
-      ...(selectedActivity ? { activity: selectedActivity } : {}),
-    } as { authority: AuthorityCategory; activity: ObservedActivityType });
+      activity: selectedActivity,
+      ...(authority ? { authority } : { authority: AuthorityCategory.Unbekannt }),
+    });
   };
 
   function groupLabel(group: AuthorityGroup): string {
@@ -133,6 +133,7 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
       case 'state':       return t.report.groupState;
       case 'immigration': return t.report.groupImmigration;
       case 'frontex':     return t.report.groupFrontex;
+      case 'unknown':     return t.report.authorityUnknownLabel;
     }
   }
 
@@ -174,16 +175,42 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
             </button>
           </div>
 
-          {/* Schritt 1: Behördengruppe */}
+          {/* Schritt 1: Aktivität */}
           {step === 1 && (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-slate-300">{t.report.step.authority}</p>
+              <p className="text-sm font-medium text-slate-300">{t.report.stepActivity}</p>
+              <ActivityGrid
+                selected={selectedActivity}
+                onSelect={handleActivitySelect}
+                t={t}
+                autoAdvance
+              />
+            </div>
+          )}
+
+          {/* Schritt 2: Behördengruppe */}
+          {step === 2 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setStep(1); setSelectedGroup(null); }}
+                  className="text-slate-400 hover:text-slate-200 text-sm transition-colors"
+                >
+                  ←
+                </button>
+                <p className="text-sm font-medium text-slate-300">{t.report.step.authority}</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 {GROUPS.map(group => (
                   <button
                     key={group}
-                    onClick={() => handleGroupSelect(group)}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 hover:border-blue-500 transition-all text-center"
+                    onClick={() => setSelectedGroup(selectedGroup === group ? null : group)}
+                    className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all text-center ${
+                      selectedGroup === group
+                        ? 'border-blue-500 bg-blue-500/10'
+                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 hover:border-blue-500 active:scale-95'
+                    }`}
                   >
                     <span className="text-2xl">{GROUP_ICONS[group]}</span>
                     <span className="text-xs font-medium text-slate-200 leading-snug">
@@ -192,43 +219,12 @@ const QuickReportSheet: React.FC<QuickReportSheetProps> = ({ geoProps, onClose, 
                   </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Schritt 2: Aktivität */}
-          {step === 2 && selectedGroup && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setStep(1); setSelectedActivity(null); }}
-                  className="text-slate-400 hover:text-slate-200 text-sm transition-colors"
-                >
-                  ←
-                </button>
-                <p className="text-sm font-medium text-slate-300">{t.report.step.activity}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {ALL_ACTIVITIES.map(act => (
-                  <button
-                    key={act}
-                    onClick={() => setSelectedActivity(selectedActivity === act ? null : act)}
-                    className={`px-3 py-2.5 rounded-lg text-xs font-medium border transition-colors text-left ${
-                      selectedActivity === act
-                        ? 'border-blue-500 bg-blue-500/15 text-blue-300'
-                        : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-500'
-                    }`}
-                  >
-                    {t.activity[act]}
-                  </button>
-                ))}
-              </div>
 
               {/* Absenden + Detaillierte Meldung */}
               <div className="pt-2 space-y-2">
                 <button
                   onClick={() => void handleSubmit()}
-                  disabled={!selectedActivity || isSubmitting}
+                  disabled={!selectedGroup || isSubmitting}
                   className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold text-sm transition-colors"
                 >
                   {isSubmitting ? t.common.loading : t.report.submitButton}

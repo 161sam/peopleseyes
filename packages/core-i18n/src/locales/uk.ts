@@ -56,6 +56,23 @@ export const uk: Translations = {
     unknownAuthority: 'Нечітко ідентифіковано →',
     activityGroupControl: 'Контроль',
     activityGroupOperation: 'Операція',
+    stepContext: 'How are you involved?', // TODO: translate
+    contextAffected: 'I am directly affected', // TODO: translate
+    contextAffectedSub: 'Stop, arrest, or similar', // TODO: translate
+    contextWitness: 'I am witnessing something', // TODO: translate
+    contextWitnessSub: 'I see it, but am not directly affected', // TODO: translate
+    stepActivity: 'What is happening?', // TODO: translate
+    stepActivitySub: 'Tap what you see', // TODO: translate
+    stepAuthority: 'Who is involved?', // TODO: translate
+    authorityHintPrefix: 'Common for {activity}:', // TODO: translate
+    authorityUnknownLabel: "Don't know / Not identifiable", // TODO: translate
+    authorityUnknownSub: 'Send report anyway', // TODO: translate
+    authorityShowAll: 'Show all authorities', // TODO: translate
+    stepTiming: 'When did this happen?', // TODO: translate
+    timingNow: 'Right now', // TODO: translate
+    timing15: '~15 min ago', // TODO: translate
+    timing60: '~1 hour ago', // TODO: translate
+    gpsUnavailable: 'GPS unavailable — location is required for this report.', // TODO: translate
     legalDisclaimer:
       'Цей застосунок призначений для документування та інформування. Неправдиві повідомлення можуть мати юридичні наслідки. Повідомляйте лише те, що ви дійсно бачили.',
   },

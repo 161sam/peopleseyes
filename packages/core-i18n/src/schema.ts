@@ -89,6 +89,23 @@ export interface Translations {
     readonly unknownAuthority: string;
     readonly activityGroupControl: string;
     readonly activityGroupOperation: string;
+    readonly stepContext: string;
+    readonly contextAffected: string;
+    readonly contextAffectedSub: string;
+    readonly contextWitness: string;
+    readonly contextWitnessSub: string;
+    readonly stepActivity: string;
+    readonly stepActivitySub: string;
+    readonly stepAuthority: string;
+    readonly authorityHintPrefix: string;
+    readonly authorityUnknownLabel: string;
+    readonly authorityUnknownSub: string;
+    readonly authorityShowAll: string;
+    readonly stepTiming: string;
+    readonly timingNow: string;
+    readonly timing15: string;
+    readonly timing60: string;
+    readonly gpsUnavailable: string;
   };
 
   readonly authority: Record<AuthorityCategory, string>;

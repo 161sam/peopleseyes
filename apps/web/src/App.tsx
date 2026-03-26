@@ -46,9 +46,12 @@ export function useChangePin(): ((newPin: string) => Promise<void>) | null {
   return useContext(ChangePinContext);
 }
 
+export type ReporterContext = 'witness' | 'affected';
+
 export interface ReportPrefill {
   authority?: AuthorityCategory;
   activity?: ObservedActivityType;
+  reporterContext?: ReporterContext;
 }
 
 const App: React.FC = () => {
