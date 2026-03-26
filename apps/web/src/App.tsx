@@ -1,5 +1,5 @@
 import React, { useState, createContext, useContext } from 'react';
-import type { AppMode } from '@peopleseyes/core-model';
+import type { AppMode, AuthorityCategory, ObservedActivityType } from '@peopleseyes/core-model';
 import { H3Resolution } from '@peopleseyes/core-model';
 import MapScreen from './pages/MapScreen.js';
 import ReportScreen from './pages/ReportScreen.js';
@@ -10,6 +10,8 @@ import { useUserSettings } from './hooks/useUserSettings.js';
 import { useI18n } from './hooks/useI18n.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
 import { useStoragePin } from './hooks/useStoragePin.js';
+import { useEmergencyAlert } from './hooks/useEmergencyAlert.js';
+import { usePanicWipe } from './hooks/usePanicWipe.js';
 import type { AnonymizedPosition } from '@peopleseyes/core-model';
 
 export type Screen = 'map' | 'report' | 'rights' | 'evidence' | 'settings';
@@ -32,8 +34,14 @@ export function useStorageKey(): CryptoKey | null {
   return useContext(StorageKeyContext);
 }
 
+export interface ReportPrefill {
+  authority?: AuthorityCategory;
+  activity?: ObservedActivityType;
+}
+
 const App: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>('map');
+  const [prefillReport, setPrefillReport] = useState<ReportPrefill | null>(null);
   const { settings } = useUserSettings();
   const { t } = useI18n(settings.locale);
   const isKiosk = settings.appMode === ('kiosk' as AppMode);
@@ -47,6 +55,12 @@ const App: React.FC = () => {
     settings.reportResolution as H3Resolution,
   );
   const geoProps: GeoProps = { position, rawCoords, geoError };
+
+  // Emergency Alert + Panic Wipe verdrahten
+  const { sendAlert } = useEmergencyAlert();
+  usePanicWipe({
+    onBeforeWipe: () => sendAlert(position?.cellId ?? null),
+  });
 
   // PinLockScreen solange anzeigen bis der Store entsperrt ist
   if (pinState !== 'unlocked') {
@@ -62,13 +76,24 @@ const App: React.FC = () => {
   const renderScreen = () => {
     switch (activeScreen) {
       case 'map':
-        return <MapScreen geoProps={geoProps} />;
+        return (
+          <MapScreen
+            geoProps={geoProps}
+            {...(!isKiosk && {
+              onNavigateToReport: (prefill) => {
+                setPrefillReport(prefill ?? null);
+                setActiveScreen('report');
+              },
+            })}
+          />
+        );
       case 'report':
         if (isKiosk) return <MapScreen geoProps={geoProps} />;
         return (
           <ReportScreen
             geoProps={geoProps}
-            onSubmitSuccess={() => setActiveScreen('map')}
+            prefill={prefillReport}
+            onSubmitSuccess={() => { setPrefillReport(null); setActiveScreen('map'); }}
           />
         );
       case 'rights':

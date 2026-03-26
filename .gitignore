@@ -9,3 +9,7 @@ dist/
 android/
 ios/
 .expo/
+
+
+# dev
+Prompt.md

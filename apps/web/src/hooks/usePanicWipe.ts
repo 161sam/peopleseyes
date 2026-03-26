@@ -65,6 +65,11 @@ async function wipeAllLocalData(): Promise<void> {
   } catch { /* ignorieren */ }
 }
 
+export interface UsePanicWipeOptions {
+  /** Wird aufgerufen bevor wipeAllLocalData() läuft. Wartet auf die zurückgegebene Promise. */
+  onBeforeWipe?: () => Promise<void>;
+}
+
 interface UsePanicWipeReturn {
   /** An onClick / onTouchStart binden */
   onTap: () => void;
@@ -74,7 +79,7 @@ interface UsePanicWipeReturn {
   isWiping: boolean;
 }
 
-export function usePanicWipe(): UsePanicWipeReturn {
+export function usePanicWipe(options?: UsePanicWipeOptions): UsePanicWipeReturn {
   const tapsRef = useRef<number[]>([]);
   const [tapCount, setTapCount] = useState(0);
   const [isWiping, setIsWiping] = useState(false);
@@ -93,12 +98,26 @@ export function usePanicWipe(): UsePanicWipeReturn {
       setTapCount(0);
       setIsWiping(true);
 
-      void wipeAllLocalData().finally(() => {
-        // Harter Reload – React-State und GUN-Instanz werden zurückgesetzt
+      const run = async () => {
+        // Schritt 1: Alert senden (falls konfiguriert)
+        if (options?.onBeforeWipe) {
+          try {
+            await options.onBeforeWipe();
+          } catch {
+            // Alert-Fehler dürfen den Wipe nicht blockieren
+          }
+        }
+        // Schritt 2: 2 Sekunden warten (Nutzer sieht "Alert wird gesendet…")
+        await new Promise<void>(resolve => setTimeout(resolve, 2000));
+        // Schritt 3: Daten löschen
+        await wipeAllLocalData();
+        // Schritt 4: Harter Reload
         window.location.reload();
-      });
+      };
+
+      void run();
     }
-  }, []);
+  }, [options]);
 
   return { onTap, tapCount, isWiping };
 }

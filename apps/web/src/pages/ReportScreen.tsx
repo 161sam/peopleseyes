@@ -17,10 +17,11 @@ import { useReports } from '../hooks/useReports.js';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
 import { AuthorityPicker } from '../components/AuthorityPicker.js';
-import type { GeoProps } from '../App.js';
+import type { GeoProps, ReportPrefill } from '../App.js';
 
 interface ReportScreenProps {
   geoProps: GeoProps;
+  prefill?: ReportPrefill | null;
   onSubmitSuccess: () => void;
 }
 
@@ -101,9 +102,17 @@ function OptionButton<T extends string>({
   );
 }
 
-const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, onSubmitSuccess }) => {
-  const [step, setStep] = useState<Step>('authority');
-  const [form, setForm] = useState<FormState>(INITIAL_FORM);
+const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmitSuccess }) => {
+  const [step, setStep] = useState<Step>(
+    prefill?.activity ? 'visibility'
+    : prefill?.authority ? 'visibility'
+    : 'authority',
+  );
+  const [form, setForm] = useState<FormState>({
+    ...INITIAL_FORM,
+    authority: prefill?.authority ?? null,
+    activity: prefill?.activity ?? null,
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 

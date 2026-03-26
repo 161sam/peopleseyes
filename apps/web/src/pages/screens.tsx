@@ -5,6 +5,11 @@ import { isRtlLocale } from '@peopleseyes/core-i18n';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
 import { usePanicWipe } from '../hooks/usePanicWipe.js';
+import { useStorageKey } from '../App.js';
+import PinChangeForm from '../components/PinChangeForm.js';
+import { RightsSimulation } from '../components/RightsSimulation.js';
+import { LegalChat } from '../components/LegalChat.js';
+import { LEGAL_ASSISTANT_KEY_STORAGE } from '../services/legal-assistant.js';
 
 // ─── RightsScreen ─────────────────────────────────────────────────────────────
 
@@ -13,6 +18,8 @@ export const RightsScreen: React.FC = () => {
   const { t } = useI18n(settings.locale);
   const topics = t.rights.topics;
   const [open, setOpen] = useState<string | null>(null);
+  const [simulationActive, setSimulationActive] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const isRtl = isRtlLocale(settings.locale);
 
   const topicList = [
@@ -22,6 +29,17 @@ export const RightsScreen: React.FC = () => {
     { key: 'recording', data: topics.recording },
     { key: 'silence', data: topics.silence },
   ] as const;
+
+  if (simulationActive) {
+    return (
+      <div dir={isRtl ? 'rtl' : 'ltr'}>
+        <RightsSimulation
+          t={t}
+          onClose={() => setSimulationActive(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-3">
@@ -54,6 +72,39 @@ export const RightsScreen: React.FC = () => {
           )}
         </div>
       ))}
+
+      {/* Situationen üben — Button */}
+      <div className="mt-2">
+        <button
+          onClick={() => setSimulationActive(true)}
+          className="w-full bg-blue-600/10 border border-blue-600/30 hover:bg-blue-600/20 rounded-xl px-4 py-4 text-left flex items-center justify-between transition-colors"
+        >
+          <div>
+            <p className="text-sm font-medium text-blue-300">{t.simulations.title}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{t.simulations.subtitle}</p>
+          </div>
+          <span className="text-blue-400">→</span>
+        </button>
+      </div>
+
+      {/* Floating Chat-Button */}
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-24 right-4 w-12 h-12 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center text-xl shadow-lg transition-colors z-30"
+        aria-label={t.legalChat.title}
+      >
+        💬
+      </button>
+
+      {/* LegalChat Sheet */}
+      {chatOpen && (
+        <LegalChat
+          t={t}
+          locale={settings.locale}
+          activeRightsTopic={open ?? undefined}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </div>
   );
 };
@@ -110,11 +161,97 @@ const RESOLUTION_OPTIONS: Array<{ value: number; labelDe: string }> = [
   { value: H3Resolution.Strassenzug, labelDe: 'Fein (~0.7 km²)' },
 ];
 
+function isValidPhone(phone: string): boolean {
+  return phone.startsWith('+') && (phone.match(/\d/g)?.length ?? 0) >= 8;
+}
+
 export const SettingsScreen: React.FC = () => {
   const { settings, updateSettings } = useUserSettings();
   const { t } = useI18n(settings.locale);
   const isRtl = isRtlLocale(settings.locale);
+  const storageKey = useStorageKey();
+  const [showPinChange, setShowPinChange] = useState(false);
+
+  // Emergency contacts state
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [phoneError, setPhoneError] = useState(false);
+
+  // AI key state
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeySaved, setApiKeySaved] = useState(
+    typeof localStorage !== 'undefined'
+      ? Boolean(localStorage.getItem(LEGAL_ASSISTANT_KEY_STORAGE))
+      : false,
+  );
+
+  // usePanicWipe — Options are threaded from App.tsx, but SettingsScreen
+  // uses the hook directly for the button UI only (no onBeforeWipe here).
   const { onTap, tapCount, isWiping } = usePanicWipe();
+
+  function handleAddContact() {
+    if (!newContactName.trim() || !newContactPhone.trim()) return;
+    if (!isValidPhone(newContactPhone)) {
+      setPhoneError(true);
+      return;
+    }
+    setPhoneError(false);
+    const contacts = settings.emergencyContacts;
+    if (contacts.length >= 3) return;
+    const newContact = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+      name: newContactName.trim(),
+      phone: newContactPhone.trim(),
+    };
+    updateSettings({ emergencyContacts: [...contacts, newContact] });
+    setNewContactName('');
+    setNewContactPhone('');
+  }
+
+  function handleRemoveContact(id: string) {
+    updateSettings({ emergencyContacts: settings.emergencyContacts.filter(c => c.id !== id) });
+  }
+
+  function handleSaveApiKey() {
+    const key = apiKeyInput.trim();
+    if (!key) return;
+    localStorage.setItem(LEGAL_ASSISTANT_KEY_STORAGE, key);
+    setApiKeyInput('');
+    setApiKeySaved(true);
+  }
+
+  function handleDeleteApiKey() {
+    localStorage.removeItem(LEGAL_ASSISTANT_KEY_STORAGE);
+    setApiKeyInput('');
+    setApiKeySaved(false);
+  }
+
+  const savedKey = typeof localStorage !== 'undefined'
+    ? (localStorage.getItem(LEGAL_ASSISTANT_KEY_STORAGE) ?? '')
+    : '';
+
+  // PIN-Änderungsformular inline anzeigen (ersetzt Settings-Inhalt)
+  if (showPinChange && storageKey) {
+    return (
+      <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => setShowPinChange(false)}
+            className="text-slate-400 hover:text-slate-200 text-sm transition-colors"
+          >
+            ← {t.common.back}
+          </button>
+          <h1 className="text-lg font-medium text-slate-100">{t.settings.pinChange}</h1>
+        </div>
+        <PinChangeForm
+          currentKey={storageKey}
+          onSuccess={() => { setShowPinChange(false); }}
+          onCancel={() => setShowPinChange(false)}
+          t={t}
+        />
+      </div>
+    );
+  }
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-6">
@@ -138,6 +275,73 @@ export const SettingsScreen: React.FC = () => {
               <span className="text-xs">{label}</span>
             </button>
           ))}
+        </div>
+      </section>
+
+      {/* Notfallkontakte */}
+      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-slate-200">{t.settings.emergencyContacts}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{t.settings.emergencyContactsHint}</p>
+        </div>
+
+        {/* Kontaktliste */}
+        {settings.emergencyContacts.map(contact => (
+          <div key={contact.id} className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <span className="text-xs text-slate-300 font-medium truncate block">{contact.name}</span>
+              <span className="text-xs text-slate-500 truncate block">{contact.phone}</span>
+            </div>
+            <button
+              onClick={() => handleRemoveContact(contact.id)}
+              className="text-xs text-red-400/70 hover:text-red-400 transition-colors flex-shrink-0"
+            >
+              {t.settings.emergencyContactRemove}
+            </button>
+          </div>
+        ))}
+
+        {/* Kontakt hinzufügen */}
+        {settings.emergencyContacts.length < 3 && (
+          <div className="space-y-2 pt-1">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newContactName}
+                onChange={e => setNewContactName(e.target.value)}
+                placeholder={t.settings.emergencyContactName}
+                className="flex-1 bg-slate-700 text-slate-200 placeholder-slate-500 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                type="tel"
+                value={newContactPhone}
+                onChange={e => { setNewContactPhone(e.target.value); setPhoneError(false); }}
+                placeholder={t.settings.emergencyContactPhone}
+                className={`flex-1 bg-slate-700 text-slate-200 placeholder-slate-500 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 ${
+                  phoneError ? 'ring-1 ring-red-500 focus:ring-red-500' : 'focus:ring-blue-500'
+                }`}
+              />
+            </div>
+            <button
+              onClick={handleAddContact}
+              disabled={!newContactName.trim() || !newContactPhone.trim()}
+              className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {t.settings.emergencyContactAdd}
+            </button>
+          </div>
+        )}
+
+        {/* Nachricht */}
+        <div className="pt-1 space-y-1">
+          <p className="text-xs text-slate-400">{t.settings.emergencyMessage}</p>
+          <input
+            type="text"
+            value={settings.emergencyMessage}
+            onChange={e => updateSettings({ emergencyMessage: e.target.value })}
+            className="w-full bg-slate-700 text-slate-200 placeholder-slate-500 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <p className="text-xs text-slate-600">{t.settings.emergencyMessageHint}</p>
         </div>
       </section>
 
@@ -180,6 +384,83 @@ export const SettingsScreen: React.FC = () => {
         <p className="text-xs text-slate-500">{t.settings.persistEvidenceHint}</p>
       </section>
 
+      {/* KI-Assistent */}
+      <section className="bg-slate-800 rounded-xl p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-slate-200">{t.settings.aiAssistantKey}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{t.settings.aiAssistantKeyHint}</p>
+        </div>
+
+        {apiKeySaved && savedKey ? (
+          <div className="space-y-2">
+            <div className="bg-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400 font-mono">
+              {savedKey.slice(0, 10)}•••
+            </div>
+            <button
+              onClick={handleDeleteApiKey}
+              className="text-xs text-red-400/70 hover:text-red-400 transition-colors"
+            >
+              {t.settings.aiAssistantKeyDelete}
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              placeholder={t.settings.aiAssistantKeyPlaceholder}
+              className="flex-1 bg-slate-700 text-slate-200 placeholder-slate-500 rounded-lg px-3 py-2 text-xs font-mono outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              onClick={handleSaveApiKey}
+              disabled={!apiKeyInput.trim()}
+              className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-3 py-2 transition-colors"
+            >
+              {t.settings.aiAssistantKeySave}
+            </button>
+          </div>
+        )}
+
+        <p className="text-xs text-slate-600">{t.settings.aiAssistantKeyLink}</p>
+      </section>
+
+      {/* Datenschutz – nur wenn OPFS-Verschlüsselung aktiv (storageKey vorhanden) */}
+      {storageKey && (
+        <section className="bg-slate-800 rounded-xl overflow-hidden">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide px-4 pt-4 pb-2">
+            🔒 {t.settings.dataProtection}
+          </p>
+          <button
+            onClick={() => setShowPinChange(true)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-300 hover:text-slate-100 hover:bg-slate-700/50 transition-colors border-t border-slate-700"
+          >
+            <span>{t.settings.pinChange}</span>
+            <span className="text-slate-500">→</span>
+          </button>
+          <button
+            onClick={onTap}
+            className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors border-t border-slate-700 select-none ${
+              isWiping
+                ? 'bg-red-900/60 text-red-300 animate-pulse'
+                : tapCount > 0
+                ? 'text-red-400/70'
+                : 'text-slate-500 hover:text-red-400/70'
+            }`}
+            aria-label="Alle lokalen Daten löschen"
+          >
+            <span>
+              {isWiping
+                ? t.settings.emergencyAlertSending
+                : tapCount > 0
+                ? `${tapCount}/5 – ${t.settings.deleteAllData}`
+                : t.settings.deleteAllData}
+            </span>
+            <span className="text-slate-600">→</span>
+          </button>
+        </section>
+      )}
+
       {/* About */}
       <section className="space-y-3 pt-2">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t.settings.about}</p>
@@ -197,30 +478,31 @@ export const SettingsScreen: React.FC = () => {
         </div>
       </section>
 
-      {/* Panic-Button – 5× schnelles Tippen auf das Versions-Badge löscht alle lokalen Daten */}
-      <section className="pt-2">
-        <button
-          onClick={onTap}
-          className={`w-full text-center py-2 rounded-lg text-xs transition-colors select-none ${
-            isWiping
-              ? 'bg-red-900/60 text-red-300 animate-pulse'
+      {/* Fallback Panic-Button wenn OPFS nicht aktiv (kein storageKey) */}
+      {!storageKey && (
+        <section className="pt-2">
+          <button
+            onClick={onTap}
+            className={`w-full text-center py-2 rounded-lg text-xs transition-colors select-none ${
+              isWiping
+                ? 'bg-red-900/60 text-red-300 animate-pulse'
+                : tapCount > 0
+                ? 'bg-slate-800 text-red-400/70'
+                : 'bg-slate-900 text-slate-700 hover:text-slate-600'
+            }`}
+            aria-label="Alle lokalen Daten löschen"
+          >
+            {isWiping
+              ? t.settings.emergencyAlertSending
               : tapCount > 0
-              ? 'bg-slate-800 text-red-400/70'
-              : 'bg-slate-900 text-slate-700 hover:text-slate-600'
-          }`}
-          aria-label="Alle lokalen Daten löschen"
-        >
-          {isWiping
-            ? 'Lösche Daten…'
-            : tapCount > 0
-            ? `${tapCount}/${5} – Alle Daten löschen`
-            : 'v0.1.0'}
-        </button>
-        <p className="text-center text-xs text-slate-800 mt-1 select-none">
-          5× tippen zum Löschen aller lokalen Daten
-        </p>
-      </section>
+              ? `${tapCount}/${5} – Alle Daten löschen`
+              : 'v0.1.0'}
+          </button>
+          <p className="text-center text-xs text-slate-800 mt-1 select-none">
+            5× tippen zum Löschen aller lokalen Daten
+          </p>
+        </section>
+      )}
     </div>
   );
 };
-

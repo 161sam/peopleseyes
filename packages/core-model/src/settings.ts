@@ -24,6 +24,12 @@ export interface NotificationPreferences {
   readonly radiusCells: 1 | 2 | 3;
 }
 
+export interface EmergencyContact {
+  readonly id: string;      // UUID v4
+  readonly name: string;    // Anzeigename
+  readonly phone: string;   // Internationale Nummer, z.B. +49151...
+}
+
 export interface UserSettings {
   readonly locale: SupportedLocale;
   readonly appMode: AppMode;
@@ -38,6 +44,10 @@ export interface UserSettings {
    * False = nur RAM, nach App-Close weg.
    */
   readonly persistEvidence: boolean;
+  /** Kontakte die beim Panic-Button-Alert benachrichtigt werden (max. 3) */
+  readonly emergencyContacts: readonly EmergencyContact[];
+  /** Nachrichtentext der beim Alert gesendet wird */
+  readonly emergencyMessage: string;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -49,4 +59,6 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   },
   reportResolution: 7,
   persistEvidence: false,
+  emergencyContacts: [],
+  emergencyMessage: 'Ich brauche Hilfe. Hier ist mein ungefährer Standort:',
 };

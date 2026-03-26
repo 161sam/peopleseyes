@@ -84,6 +84,29 @@ export async function generateAndStoreSalt(): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 /**
+ * Ändert den PIN: leitet neuen Schlüssel ab, re-encryptet alle OPFS-Dateien atomisch.
+ *
+ * Strategie: Schreibe zuerst alle neuen Dateien (<id>.new), dann ersetze die alten,
+ * dann lösche .new-Dateien. Bei Fehler: .new-Dateien aufräumen, alte bleiben intakt.
+ *
+ * @param currentKey Aktueller CryptoKey (aus StorageKeyContext)
+ * @param newPin     Neuer PIN (4–8 Ziffern, numerisch)
+ * @returns          Neuer CryptoKey der ab sofort im Context verwendet wird
+ */
+export async function changeStoragePin(
+  currentKey: CryptoKey,
+  newPin: string,
+): Promise<CryptoKey> {
+  // Neuen Salt generieren und persistieren
+  const newSalt = await generateAndStoreSalt();
+  // Neuen Schlüssel aus dem neuen PIN + neuem Salt ableiten
+  const newKey = await deriveStorageKey(newPin, newSalt);
+  // Alle Report-Dateien mit neuem Schlüssel re-encrypten
+  await reEncryptAllReports(currentKey, newKey);
+  return newKey;
+}
+
+/**
  * Re-verschlüsselt alle Report-Dateien mit einem neuen Schlüssel (PIN-Wechsel).
  *
  * Atomisch-Design:
