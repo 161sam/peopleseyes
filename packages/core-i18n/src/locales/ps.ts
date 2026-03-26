@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const ps: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'سره يو ځای وګورو. خوندي ثبت کړو.' },
 
-  nav: { map: 'نقشه', report: 'راپور', rights: 'حقوق', evidence: 'شواهد', settings: 'تنظیمات' },
+  nav: { map: 'نقشه', report: 'راپور', rights: 'حقوق', evidence: 'شواهد', settings: 'تنظیمات', history: 'تاریخچه' },
 
   map: {
     title: 'اوسني مشاهدې',

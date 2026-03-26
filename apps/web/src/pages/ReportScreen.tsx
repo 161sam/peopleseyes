@@ -22,10 +22,10 @@ import type { GeoProps, ReportPrefill } from '../App.js';
 interface ReportScreenProps {
   geoProps: GeoProps;
   prefill?: ReportPrefill | null;
-  onSubmitSuccess: () => void;
+  onSubmitSuccess: (toastMessage: string) => void;
 }
 
-type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm' | 'success';
+type Step = 'authority' | 'visibility' | 'activity' | 'confidence' | 'description' | 'confirm';
 
 interface FormState {
   authority: AuthorityCategory | null;
@@ -104,8 +104,8 @@ function OptionButton<T extends string>({
 
 const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmitSuccess }) => {
   const [step, setStep] = useState<Step>(
-    prefill?.activity ? 'visibility'
-    : prefill?.authority ? 'visibility'
+    (prefill?.authority && prefill?.activity) ? 'confidence'
+    : (prefill?.authority ?? prefill?.activity) ? 'visibility'
     : 'authority',
   );
   const [form, setForm] = useState<FormState>({
@@ -141,9 +141,9 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmit
 
   const handleSubmit = async () => {
     if (!form.authority || !form.visibility || !form.activity || !form.confidence) return;
+    if (!rawCoords) return;
 
-    const lat = rawCoords?.lat ?? 51.3;
-    const lng = rawCoords?.lng ?? 10.0;
+    const { lat, lng } = rawCoords;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -161,33 +161,13 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmit
       };
       const report = createReport(draft);
       await addReport(report);
-      setStep('success');
+      onSubmitSuccess(t.report.successMessage);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Fehler beim Senden');
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  if (step === 'success') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-3xl">
-          ✓
-        </div>
-        <div>
-          <h2 className="text-lg font-medium text-slate-100 mb-2">Meldung übermittelt</h2>
-          <p className="text-sm text-slate-400">{t.report.successMessage}</p>
-        </div>
-        <button
-          onClick={() => { setForm(INITIAL_FORM); setStep('authority'); onSubmitSuccess(); }}
-          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          Zur Karte
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col min-h-full px-4 pt-6 pb-4 max-w-lg mx-auto">
@@ -318,9 +298,14 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmit
               )}
             </div>
 
-            {geoError && (
+            {!rawCoords && (
+              <p className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
+                GPS nicht verfügbar — Meldung kann nicht gesendet werden.
+              </p>
+            )}
+            {rawCoords && geoError && (
               <p className="text-xs text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
-                ⚠ {geoError} – Meldung wird ohne exakten Standort übermittelt.
+                ⚠ {geoError}
               </p>
             )}
 
@@ -357,8 +342,8 @@ const ReportScreen: React.FC<ReportScreenProps> = ({ geoProps, prefill, onSubmit
         ) : (
           <button
             onClick={() => { void handleSubmit(); }}
-            disabled={isSubmitting}
-            className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
+            disabled={isSubmitting || !rawCoords}
+            className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             {isSubmitting ? t.common.loading : t.report.submitButton}
           </button>

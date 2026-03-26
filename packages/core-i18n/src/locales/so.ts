@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const so: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'Waxaan si wadajir ah u daawanaynaa. Si ammaan ah u dukumeyntaynaa.' },
 
-  nav: { map: 'Khariidad', report: 'Warbixin', rights: 'Xuquuq', evidence: 'Caddayn', settings: 'Dejinta' },
+  nav: { map: 'Khariidad', report: 'Warbixin', rights: 'Xuquuq', evidence: 'Caddayn', settings: 'Dejinta', history: 'Taariikhda' },
 
   map: {
     title: 'Aragtiyada hadda',

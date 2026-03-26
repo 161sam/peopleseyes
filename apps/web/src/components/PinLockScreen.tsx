@@ -25,15 +25,17 @@ interface PinLockScreenProps {
   pinState: PinState;
   pinError: string | null;
   onSubmitPin: UseStoragePinReturn['submitPin'];
+  onForgotPin: () => Promise<void>;
 }
 
-const PinLockScreen: React.FC<PinLockScreenProps> = ({ pinState, pinError, onSubmitPin }) => {
+const PinLockScreen: React.FC<PinLockScreenProps> = ({ pinState, pinError, onSubmitPin, onForgotPin }) => {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [isConfirming, setIsConfirming] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgotConfirm, setShowForgotConfirm] = useState(false);
   const prevErrorRef = useRef<string | null>(null);
 
   const isSetup = pinState === 'setup';
@@ -221,6 +223,43 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({ pinState, pinError, onSub
           PeoplesEyes speichert keinen PIN und hat keine Entsperrungs-Hintertür.
           Bei vergessenem PIN gehen lokale Daten unwiederbringlich verloren.
         </p>
+
+        {/* PIN vergessen – nur im 'locked' Zustand anzeigen */}
+        {!isSetup && (
+          <div className="text-center">
+            {showForgotConfirm ? (
+              <div className="space-y-3">
+                <p className="text-xs text-red-400 leading-relaxed">
+                  Alle lokalen Daten werden unwiderruflich gelöscht.
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotConfirm(false)}
+                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-3 py-1.5 border border-slate-700 rounded-lg"
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void onForgotPin(); }}
+                    className="text-xs text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 border border-red-800 rounded-lg"
+                  >
+                    Daten löschen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowForgotConfirm(true)}
+                className="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                PIN vergessen?
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

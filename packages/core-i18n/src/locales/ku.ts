@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const ku: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'Bi hev re temaşe bikin. Bi ewlehî belgeleyin.' },
 
-  nav: { map: 'Nexşe', report: 'Rapor bike', rights: 'Maf', evidence: 'Delîl', settings: 'Mîheng' },
+  nav: { map: 'Nexşe', report: 'Rapor bike', rights: 'Maf', evidence: 'Delîl', settings: 'Mîheng', history: 'Dîrok' },
 
   map: {
     title: 'Dîtinên niha',

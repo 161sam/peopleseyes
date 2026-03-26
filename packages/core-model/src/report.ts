@@ -93,10 +93,11 @@ export interface CellAggregate {
   readonly aggregateScore: number;
   /**
    * Datenquelle dieses Aggregats.
-   * 'manual'   → direkte Nutzer-Meldung (Standard, wenn nicht gesetzt)
-   * 'external' → aus einem externen CERF-Feed importiert
+   * 'peopleseyes' → lokale Nutzer-Meldung aus dieser App
+   * 'manual'      → direkte Nutzer-Meldung (älterer Wert, gleichwertig zu 'peopleseyes')
+   * 'external'    → aus einem externen CERF-Feed importiert
    */
-  readonly source?: 'manual' | 'external';
+  readonly source?: 'peopleseyes' | 'manual' | 'external';
 
   /**
    * CERF-Jurisdiktion wenn source === 'external'.

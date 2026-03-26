@@ -3,9 +3,10 @@ import type { AppMode, AuthorityCategory, ObservedActivityType } from '@peoplese
 import { H3Resolution } from '@peopleseyes/core-model';
 import MapScreen from './pages/MapScreen.js';
 import ReportScreen from './pages/ReportScreen.js';
-import { RightsScreen, EvidenceScreen, SettingsScreen } from './pages/screens.js';
+import { RightsScreen, EvidenceScreen, SettingsScreen, HistoryScreen } from './pages/screens.js';
 import BottomNav from './components/BottomNav.js';
 import PinLockScreen from './components/PinLockScreen.js';
+import Toast from './components/Toast.js';
 import { useUserSettings } from './hooks/useUserSettings.js';
 import { useI18n } from './hooks/useI18n.js';
 import { useGeolocation } from './hooks/useGeolocation.js';
@@ -14,7 +15,7 @@ import { useEmergencyAlert } from './hooks/useEmergencyAlert.js';
 import { usePanicWipe } from './hooks/usePanicWipe.js';
 import type { AnonymizedPosition } from '@peopleseyes/core-model';
 
-export type Screen = 'map' | 'report' | 'rights' | 'evidence' | 'settings';
+export type Screen = 'map' | 'report' | 'rights' | 'evidence' | 'settings' | 'history';
 
 /** Gemeinsame GPS-Props die an Map und ReportScreen durchgereicht werden */
 export interface GeoProps {
@@ -34,6 +35,17 @@ export function useStorageKey(): CryptoKey | null {
   return useContext(StorageKeyContext);
 }
 
+/**
+ * Context für die changePin-Funktion.
+ * Ermöglicht PinChangeForm den PIN zu wechseln und den Context zu aktualisieren.
+ */
+export const ChangePinContext = createContext<((newPin: string) => Promise<void>) | null>(null);
+
+/** Gibt changePin aus dem Context zurück. */
+export function useChangePin(): ((newPin: string) => Promise<void>) | null {
+  return useContext(ChangePinContext);
+}
+
 export interface ReportPrefill {
   authority?: AuthorityCategory;
   activity?: ObservedActivityType;
@@ -42,12 +54,13 @@ export interface ReportPrefill {
 const App: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>('map');
   const [prefillReport, setPrefillReport] = useState<ReportPrefill | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const { settings } = useUserSettings();
   const { t } = useI18n(settings.locale);
   const isKiosk = settings.appMode === ('kiosk' as AppMode);
 
   // PIN-Unlock – muss vor allem anderen laufen
-  const { pinState, storageKey, pinError, submitPin } = useStoragePin();
+  const { pinState, storageKey, pinError, submitPin, changePin, forgotPin } = useStoragePin();
 
   // Fehler 2 fix: GPS-Watcher einmalig auf App-Ebene — kein doppelter
   // watchPosition wenn gleichzeitig MapScreen und ReportScreen gemountet.
@@ -69,6 +82,7 @@ const App: React.FC = () => {
         pinState={pinState}
         pinError={pinError}
         onSubmitPin={submitPin}
+        onForgotPin={forgotPin}
       />
     );
   }
@@ -93,7 +107,11 @@ const App: React.FC = () => {
           <ReportScreen
             geoProps={geoProps}
             prefill={prefillReport}
-            onSubmitSuccess={() => { setPrefillReport(null); setActiveScreen('map'); }}
+            onSubmitSuccess={(msg) => {
+              setToastMessage(msg);
+              setPrefillReport(null);
+              setActiveScreen('map');
+            }}
           />
         );
       case 'rights':
@@ -103,25 +121,33 @@ const App: React.FC = () => {
         return <EvidenceScreen />;
       case 'settings':
         return <SettingsScreen />;
+      case 'history':
+        if (isKiosk) return <MapScreen geoProps={geoProps} />;
+        return <HistoryScreen />;
       default:
         return <MapScreen geoProps={geoProps} />;
     }
   };
 
   return (
-    <StorageKeyContext.Provider value={storageKey}>
-      <div className="flex flex-col h-screen max-h-dvh bg-slate-950 text-slate-100">
-        <main className="flex-1 overflow-y-auto pb-20">
-          {renderScreen()}
-        </main>
-        <BottomNav
-          activeScreen={activeScreen}
-          onNavigate={setActiveScreen}
-          isKiosk={isKiosk}
-          t={t}
-        />
-      </div>
-    </StorageKeyContext.Provider>
+    <ChangePinContext.Provider value={changePin}>
+      <StorageKeyContext.Provider value={storageKey}>
+        <div className="flex flex-col h-screen max-h-dvh bg-slate-950 text-slate-100">
+          {toastMessage && (
+            <Toast message={toastMessage} onDone={() => setToastMessage(null)} />
+          )}
+          <main className="flex-1 overflow-y-auto pb-20">
+            {renderScreen()}
+          </main>
+          <BottomNav
+            activeScreen={activeScreen}
+            onNavigate={setActiveScreen}
+            isKiosk={isKiosk}
+            t={t}
+          />
+        </div>
+      </StorageKeyContext.Provider>
+    </ChangePinContext.Provider>
   );
 };
 

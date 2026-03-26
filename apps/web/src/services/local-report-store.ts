@@ -282,6 +282,15 @@ export class LocalReportStore {
     await reEncryptAllReports(oldKey, newKey);
     this.key = newKey;
   }
+
+  /**
+   * Aktualisiert nur den internen Schlüssel ohne Re-Encryption.
+   * Wird aufgerufen nachdem changeStoragePin() die OPFS-Dateien bereits
+   * neu verschlüsselt hat.
+   */
+  updateKey(newKey: CryptoKey): void {
+    this.key = newKey;
+  }
 }
 
 export const localReportStore = new LocalReportStore();

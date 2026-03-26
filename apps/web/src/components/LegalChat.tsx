@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { Translations } from '@peopleseyes/core-i18n';
 import {
   queryLegalAssistant,
-  LEGAL_ASSISTANT_KEY_STORAGE,
+  loadLegalApiKey,
 } from '../services/legal-assistant.js';
 import type { LegalAssistantMessage } from '../services/legal-assistant.js';
+import { useStorageKey } from '../App.js';
 
 interface LegalChatProps {
   t: Translations;
@@ -36,11 +37,14 @@ export const LegalChat: React.FC<LegalChatProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const storageKey = useStorageKey();
 
-  const apiKey = typeof localStorage !== 'undefined'
-    ? (localStorage.getItem(LEGAL_ASSISTANT_KEY_STORAGE) ?? '')
-    : '';
+  useEffect(() => {
+    if (!storageKey) return;
+    void loadLegalApiKey(storageKey).then(k => setApiKey(k ?? ''));
+  }, [storageKey]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

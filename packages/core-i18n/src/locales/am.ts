@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const am: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'በጋራ እንስከር። ደህና ሁኖ እናሰነድ።' },
 
-  nav: { map: 'ካርታ', report: 'ሪፖርት', rights: 'መብቶች', evidence: 'ማስረጃ', settings: 'ቅንብሮች' },
+  nav: { map: 'ካርታ', report: 'ሪፖርት', rights: 'መብቶች', evidence: 'ማስረጃ', settings: 'ቅንብሮች', history: 'ታሪክ' },
 
   map: {
     title: 'አሁን ያሉ ምልከታዎች',

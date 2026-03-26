@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const ti: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'ብሓባር ንዕዘብ። ብሰላም ንሰነድ።' },
 
-  nav: { map: 'ካርታ', report: 'ጸብጻብ', rights: 'መሰላት', evidence: 'ምስክርነት', settings: 'ምቕናዕ' },
+  nav: { map: 'ካርታ', report: 'ጸብጻብ', rights: 'መሰላት', evidence: 'ምስክርነት', settings: 'ምቕናዕ', history: 'ታሪኽ' },
 
   map: {
     title: 'ሕጂ ዘሎ ምልከታ',

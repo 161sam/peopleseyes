@@ -1,7 +1,9 @@
 /**
  * KI-Rechtshilfe — direkte Anthropic-API-Anfrage aus dem Browser.
- * Der API-Key verbleibt in localStorage und wird nie an einen eigenen Server gesendet.
+ * Der API-Key wird verschlüsselt im OPFS-Store gespeichert (AES-GCM via StorageKeyContext).
  */
+
+import { encryptRecord, decryptRecord } from '@peopleseyes/core-crypto';
 
 export interface LegalAssistantMessage {
   readonly role: 'user' | 'assistant';
@@ -73,4 +75,38 @@ export async function queryLegalAssistant(
   return text;
 }
 
-export const LEGAL_ASSISTANT_KEY_STORAGE = 'pe:anthropic-api-key';
+const LEGAL_API_KEY_OPFS_FILE = 'pe_legal_api_key';
+
+/** Speichert den API-Key verschlüsselt im OPFS-Store. */
+export async function saveLegalApiKey(apiKey: string, storageKey: CryptoKey): Promise<void> {
+  const root = await navigator.storage.getDirectory();
+  const encrypted = await encryptRecord(storageKey, apiKey);
+  const fileHandle = await root.getFileHandle(LEGAL_API_KEY_OPFS_FILE, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(encrypted);
+  await writable.close();
+}
+
+/** Liest und entschlüsselt den API-Key aus dem OPFS-Store. Gibt null zurück wenn nicht vorhanden. */
+export async function loadLegalApiKey(storageKey: CryptoKey): Promise<string | null> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fileHandle = await root.getFileHandle(LEGAL_API_KEY_OPFS_FILE);
+    const file = await fileHandle.getFile();
+    const buffer = await file.arrayBuffer();
+    return await decryptRecord(storageKey, new Uint8Array(buffer));
+  } catch {
+    return null;
+  }
+}
+
+/** Löscht den API-Key aus dem OPFS-Store. */
+export async function deleteLegalApiKey(): Promise<void> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fileHandle = await root.getFileHandle(LEGAL_API_KEY_OPFS_FILE);
+    await fileHandle.remove();
+  } catch {
+    // Datei nicht vorhanden – kein Fehler
+  }
+}

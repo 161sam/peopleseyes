@@ -20,7 +20,7 @@ export function generateCerfFeed(aggregates: CellAggregate[]): CerfFeed {
     source: 'peopleseyes',
     jurisdiction: 'EU',
     reports: aggregates
-      .filter(a => !a.source || a.source === 'manual')  // keine re-exported externen Daten
+      .filter(a => a.source === 'peopleseyes' || a.source === 'manual')  // keine re-exported externen Daten
       .map(a => aggregateToCerf(a, 'EU')),
   };
 }

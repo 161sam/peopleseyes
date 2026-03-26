@@ -19,6 +19,7 @@ import {
   deriveStorageKey,
   loadSaltFromOpfs,
   generateAndStoreSalt,
+  changeStoragePin,
 } from '../services/storage-key.js';
 import { localReportStore } from '../services/local-report-store.js';
 
@@ -34,6 +35,8 @@ export interface UseStoragePinReturn {
   submitPin: (pin: string) => Promise<void>;
   /** PIN wechseln (alle Reports werden re-verschlüsselt) – nur im 'unlocked' Zustand */
   changePin: (newPin: string) => Promise<void>;
+  /** PIN zurücksetzen: löscht alle OPFS-Daten und wechselt in den 'setup'-Zustand */
+  forgotPin: () => Promise<void>;
 }
 
 export function useStoragePin(): UseStoragePinReturn {
@@ -101,14 +104,29 @@ export function useStoragePin(): UseStoragePinReturn {
   const changePin = useCallback(
     async (newPin: string) => {
       if (!storageKey) return;
-      const newSalt = await generateAndStoreSalt();
-      const newKey = await deriveStorageKey(newPin, newSalt);
-      await localReportStore.reEncryptAll(storageKey, newKey);
-      setSalt(newSalt);
+      // changeStoragePin generiert neuen Salt, leitet neuen Key ab und re-encryptet alle
+      // OPFS-Report-Dateien atomisch. Danach internen Store-Key + Context aktualisieren.
+      const newKey = await changeStoragePin(storageKey, newPin);
+      localReportStore.updateKey(newKey);
       setStorageKey(newKey);
     },
     [storageKey],
   );
 
-  return { pinState, storageKey, pinError, submitPin, changePin };
+  const forgotPin = useCallback(async () => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      for await (const [name] of root.entries()) {
+        await root.removeEntry(name, { recursive: true }).catch(() => {/* best-effort */});
+      }
+    } catch (err) {
+      console.warn('[useStoragePin] OPFS-Wipe fehlgeschlagen:', err);
+    }
+    setSalt(null);
+    setStorageKey(null);
+    setPinError(null);
+    setPinState('setup');
+  }, []);
+
+  return { pinState, storageKey, pinError, submitPin, changePin, forgotPin };
 }

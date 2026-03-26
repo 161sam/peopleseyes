@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const sw: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'Tunaangalia pamoja. Kuandika kwa usalama.' },
 
-  nav: { map: 'Ramani', report: 'Ripoti', rights: 'Haki', evidence: 'Ushahidi', settings: 'Mipangilio' },
+  nav: { map: 'Ramani', report: 'Ripoti', rights: 'Haki', evidence: 'Ushahidi', settings: 'Mipangilio', history: 'Historia' },
 
   map: {
     title: 'Uchunguzi wa sasa',

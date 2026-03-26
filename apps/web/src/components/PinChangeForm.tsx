@@ -8,8 +8,8 @@
  * Gleiche Keypad-Komponente wie PinLockScreen, kein Freitext-Input.
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { deriveStorageKey, loadSaltFromOpfs, changeStoragePin } from '../services/storage-key.js';
+import React, { useState, useCallback, useEffect } from 'react';
+import { deriveStorageKey, loadSaltFromOpfs } from '../services/storage-key.js';
 import type { Translations } from '@peopleseyes/core-i18n';
 
 const MIN_PIN_LENGTH = 4;
@@ -20,14 +20,16 @@ type KeypadKey = (typeof KEYPAD_KEYS)[number];
 
 interface PinChangeFormProps {
   currentKey: CryptoKey;
-  onSuccess: (newKey: CryptoKey) => void;
+  /** Wird mit dem neuen PIN aufgerufen; soll changePin aus StorageKeyContext verwenden. */
+  onChangePinAsync: (newPin: string) => Promise<void>;
+  onSuccess: () => void;
   onCancel: () => void;
   t: Translations;
 }
 
 type ChangeStep = 1 | 2 | 3;
 
-const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onSuccess, onCancel, t }) => {
+const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onChangePinAsync, onSuccess, onCancel, t }) => {
   const [step, setStep] = useState<ChangeStep>(1);
   const [pin, setPin] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -36,8 +38,7 @@ const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onSuccess, on
   const [isShaking, setIsShaking] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [isDone, setIsDone] = useState(false);
-  const newKeyRef = useRef<CryptoKey | null>(null);
-  const prevErrorRef = useRef<string | null>(null);
+  const prevErrorRef = React.useRef<string | null>(null);
 
   const activePin = step === 1 ? pin : step === 2 ? newPin : confirmPin;
 
@@ -56,9 +57,9 @@ const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onSuccess, on
 
   // Erfolg: nach 2s zurück zu Settings
   useEffect(() => {
-    if (isDone && newKeyRef.current) {
+    if (isDone) {
       const timer = setTimeout(() => {
-        onSuccess(newKeyRef.current!);
+        onSuccess();
       }, 2000);
       return () => clearTimeout(timer);
     }
@@ -143,8 +144,7 @@ const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onSuccess, on
 
       setIsWorking(true);
       try {
-        const newKey = await changeStoragePin(currentKey, newPin);
-        newKeyRef.current = newKey;
+        await onChangePinAsync(newPin);
         setIsDone(true);
       } catch {
         setError('Re-Encryption fehlgeschlagen. Bitte erneut versuchen.');
@@ -152,7 +152,7 @@ const PinChangeForm: React.FC<PinChangeFormProps> = ({ currentKey, onSuccess, on
         setIsWorking(false);
       }
     }
-  }, [isWorking, isDone, activePin.length, step, pin, newPin, confirmPin, currentKey, t]);
+  }, [isWorking, isDone, activePin.length, step, pin, newPin, confirmPin, onChangePinAsync, t]);
 
   const stepLabel = step === 1
     ? t.settings.pinChangeStep1

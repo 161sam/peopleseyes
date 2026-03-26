@@ -7,7 +7,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Text } from 'react-native';
 import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isRtlLocale, detectLocale, getTranslations } from '@peopleseyes/core-i18n';
+import { getLocales } from 'expo-localization';
+import { isRtlLocale, getTranslations } from '@peopleseyes/core-i18n';
 import type { SupportedLocale } from '@peopleseyes/core-model';
 import { requestNotificationPermission } from './services/notification-service.js';
 
@@ -16,8 +17,10 @@ import { requestNotificationPermission } from './services/notification-service.j
  */
 function applyRtlIfNeeded(): void {
   try {
-    const locale = detectLocale();
-    const shouldBeRtl = isRtlLocale(locale);
+    const locales = getLocales();
+    const tag = locales[0]?.languageTag ?? 'de';
+    const lang = (tag.split('-')[0] ?? 'de') as SupportedLocale;
+    const shouldBeRtl = isRtlLocale(lang);
     if (shouldBeRtl !== I18nManager.isRTL) {
       I18nManager.forceRTL(shouldBeRtl);
       if (Platform.OS !== 'web') {
@@ -27,7 +30,7 @@ function applyRtlIfNeeded(): void {
       }
     }
   } catch {
-    // detectLocale nutzt navigator.languages – auf RN per getLocales() ersetzen
+    // getLocales() nicht verfügbar – RTL bleibt deaktiviert
   }
 }
 

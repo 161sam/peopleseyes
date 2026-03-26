@@ -4,7 +4,7 @@ import type { Translations } from '../schema.js';
 export const fr: Translations = {
   app: { name: 'PeoplesEyes', tagline: 'Observer ensemble. Documenter en sécurité.' },
 
-  nav: { map: 'Carte', report: 'Signaler', rights: 'Droits', evidence: 'Preuves', settings: 'Paramètres' },
+  nav: { map: 'Carte', report: 'Signaler', rights: 'Droits', evidence: 'Preuves', settings: 'Paramètres', history: 'Historique' },
 
   map: {
     title: 'Observations actuelles',

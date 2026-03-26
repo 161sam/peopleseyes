@@ -13,6 +13,7 @@ export const de: Translations = {
     rights: 'Rechte',
     evidence: 'Beweise',
     settings: 'Einstellungen',
+    history: 'Verlauf',
   },
 
   map: {

@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { H3Resolution } from '@peopleseyes/core-model';
-import type { SupportedLocale } from '@peopleseyes/core-model';
+import type { SupportedLocale, Report } from '@peopleseyes/core-model';
+import { localReportStore } from '../services/local-report-store.js';
+import { generateCerfFeed } from '../services/cerf-feed-generator.js';
 import { isRtlLocale } from '@peopleseyes/core-i18n';
 import { useUserSettings } from '../hooks/useUserSettings.js';
 import { useI18n } from '../hooks/useI18n.js';
 import { usePanicWipe } from '../hooks/usePanicWipe.js';
-import { useStorageKey } from '../App.js';
+import { useStorageKey, useChangePin } from '../App.js';
 import PinChangeForm from '../components/PinChangeForm.js';
 import { RightsSimulation } from '../components/RightsSimulation.js';
 import { LegalChat } from '../components/LegalChat.js';
-import { LEGAL_ASSISTANT_KEY_STORAGE } from '../services/legal-assistant.js';
+import { saveLegalApiKey, loadLegalApiKey, deleteLegalApiKey } from '../services/legal-assistant.js';
 
 // ─── RightsScreen ─────────────────────────────────────────────────────────────
 
@@ -20,15 +22,25 @@ export const RightsScreen: React.FC = () => {
   const [open, setOpen] = useState<string | null>(null);
   const [simulationActive, setSimulationActive] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const isRtl = isRtlLocale(settings.locale);
 
-  const topicList = [
+  const allTopics = [
     { key: 'identityControl', data: topics.identityControl },
     { key: 'search', data: topics.search },
     { key: 'arrest', data: topics.arrest },
     { key: 'recording', data: topics.recording },
     { key: 'silence', data: topics.silence },
   ] as const;
+
+  const q = searchQuery.trim().toLowerCase();
+  const topicList = q
+    ? allTopics.filter(({ data }) =>
+        data.title.toLowerCase().includes(q) ||
+        data.summary.toLowerCase().includes(q) ||
+        data.keyPoints.some(p => p.toLowerCase().includes(q)),
+      )
+    : allTopics;
 
   if (simulationActive) {
     return (
@@ -45,6 +57,14 @@ export const RightsScreen: React.FC = () => {
     <div dir={isRtl ? 'rtl' : 'ltr'} className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-3">
       <h1 className="text-lg font-medium text-slate-100 mb-1">{t.rights.title}</h1>
       <p className="text-xs text-slate-500 leading-relaxed mb-4">{t.rights.disclaimer}</p>
+
+      <input
+        type="search"
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+        placeholder="Suchen…"
+        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500"
+      />
 
       {topicList.map(({ key, data }) => (
         <div key={key} className="bg-slate-800 rounded-xl overflow-hidden">
@@ -170,6 +190,7 @@ export const SettingsScreen: React.FC = () => {
   const { t } = useI18n(settings.locale);
   const isRtl = isRtlLocale(settings.locale);
   const storageKey = useStorageKey();
+  const changePin = useChangePin();
   const [showPinChange, setShowPinChange] = useState(false);
 
   // Emergency contacts state
@@ -177,13 +198,14 @@ export const SettingsScreen: React.FC = () => {
   const [newContactPhone, setNewContactPhone] = useState('');
   const [phoneError, setPhoneError] = useState(false);
 
-  // AI key state
+  // AI key state (OPFS-verschlüsselt)
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKeySaved, setApiKeySaved] = useState(
-    typeof localStorage !== 'undefined'
-      ? Boolean(localStorage.getItem(LEGAL_ASSISTANT_KEY_STORAGE))
-      : false,
-  );
+  const [savedApiKey, setSavedApiKey] = useState<string>('');
+
+  React.useEffect(() => {
+    if (!storageKey) return;
+    void loadLegalApiKey(storageKey).then(k => setSavedApiKey(k ?? ''));
+  }, [storageKey]);
 
   // usePanicWipe — Options are threaded from App.tsx, but SettingsScreen
   // uses the hook directly for the button UI only (no onBeforeWipe here).
@@ -214,21 +236,19 @@ export const SettingsScreen: React.FC = () => {
 
   function handleSaveApiKey() {
     const key = apiKeyInput.trim();
-    if (!key) return;
-    localStorage.setItem(LEGAL_ASSISTANT_KEY_STORAGE, key);
-    setApiKeyInput('');
-    setApiKeySaved(true);
+    if (!key || !storageKey) return;
+    void saveLegalApiKey(key, storageKey).then(() => {
+      setSavedApiKey(key);
+      setApiKeyInput('');
+    });
   }
 
   function handleDeleteApiKey() {
-    localStorage.removeItem(LEGAL_ASSISTANT_KEY_STORAGE);
-    setApiKeyInput('');
-    setApiKeySaved(false);
+    void deleteLegalApiKey().then(() => {
+      setSavedApiKey('');
+      setApiKeyInput('');
+    });
   }
-
-  const savedKey = typeof localStorage !== 'undefined'
-    ? (localStorage.getItem(LEGAL_ASSISTANT_KEY_STORAGE) ?? '')
-    : '';
 
   // PIN-Änderungsformular inline anzeigen (ersetzt Settings-Inhalt)
   if (showPinChange && storageKey) {
@@ -245,6 +265,7 @@ export const SettingsScreen: React.FC = () => {
         </div>
         <PinChangeForm
           currentKey={storageKey}
+          onChangePinAsync={changePin ?? (async () => { throw new Error('changePin nicht verfügbar'); })}
           onSuccess={() => { setShowPinChange(false); }}
           onCancel={() => setShowPinChange(false)}
           t={t}
@@ -391,10 +412,10 @@ export const SettingsScreen: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">{t.settings.aiAssistantKeyHint}</p>
         </div>
 
-        {apiKeySaved && savedKey ? (
+        {savedApiKey ? (
           <div className="space-y-2">
             <div className="bg-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400 font-mono">
-              {savedKey.slice(0, 10)}•••
+              {savedApiKey.slice(0, 10)}•••
             </div>
             <button
               onClick={handleDeleteApiKey}
@@ -461,6 +482,29 @@ export const SettingsScreen: React.FC = () => {
         </section>
       )}
 
+      {/* Reports exportieren */}
+      <section className="space-y-2">
+        <button
+          onClick={() => {
+            void (async () => {
+              const aggregates = await localReportStore.computeAllAggregates();
+              const feed = generateCerfFeed(aggregates);
+              const blob = new Blob([JSON.stringify(feed, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `peopleseyes-export-${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            })();
+          }}
+          className="w-full text-left px-4 py-3 bg-slate-800 rounded-xl text-sm text-slate-300 hover:text-slate-100 hover:bg-slate-700/80 flex items-center justify-between transition-colors"
+        >
+          <span>Reports exportieren (CERF-JSON)</span>
+          <span className="text-slate-500">↓</span>
+        </button>
+      </section>
+
       {/* About */}
       <section className="space-y-3 pt-2">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t.settings.about}</p>
@@ -502,6 +546,64 @@ export const SettingsScreen: React.FC = () => {
             5× tippen zum Löschen aller lokalen Daten
           </p>
         </section>
+      )}
+    </div>
+  );
+};
+
+// ─── HistoryScreen ─────────────────────────────────────────────────────────────
+
+export const HistoryScreen: React.FC = () => {
+  const { settings } = useUserSettings();
+  const { t } = useI18n(settings.locale);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    void localReportStore.getAllReports().then(all => {
+      const sorted = [...all].sort((a, b) => b.reportedAtMinute - a.reportedAtMinute);
+      setReports(sorted);
+      setIsLoading(false);
+    });
+  }, []);
+
+  return (
+    <div className="px-4 pt-6 pb-8 max-w-lg mx-auto">
+      <h1 className="text-lg font-medium text-slate-100 mb-4">Meine Meldungen</h1>
+
+      {isLoading ? (
+        <p className="text-sm text-slate-500 text-center py-8">{t.common.loading}</p>
+      ) : reports.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
+          <span className="text-3xl">📋</span>
+          <p className="text-sm">Noch keine Meldungen.</p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {reports.map(r => {
+            const date = new Date(r.reportedAtMinute);
+            const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            const timeStr = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            const cellShort = r.position.cellId.slice(0, 8);
+            return (
+              <li
+                key={r.id}
+                className="bg-slate-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-300 font-medium truncate">
+                    {t.authority[r.authorityCategory]} · {t.activity[r.activityType]}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">{cellShort}…</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs text-slate-400">{dateStr}</p>
+                  <p className="text-xs text-slate-600">{timeStr}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

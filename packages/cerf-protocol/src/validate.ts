@@ -16,6 +16,9 @@ const VALID_VERIFIED_BY = new Set([null, 'community', 'ngo']);
 /** Maximum age of a report: 24 hours */
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** Maximum age of a feed: 5 minutes */
+const MAX_FEED_AGE_MS = 5 * 60 * 1000;
+
 /**
  * Checks whether a value is a valid CerfReport object.
  * Rejects reports older than 24h.
@@ -63,12 +66,14 @@ export function cerfSignatureInput(
 
 /**
  * Checks whether a CERF feed is valid.
+ * Rejects feeds older than 5 minutes.
  */
-export function validateCerfFeed(value: unknown, _nowMs?: number): value is CerfFeed {
+export function validateCerfFeed(value: unknown, nowMs: number = Date.now()): value is CerfFeed {
   if (typeof value !== 'object' || value === null) return false;
   const f = value as Record<string, unknown>;
   if (f['cerf'] !== CERF_VERSION) return false;
   if (typeof f['generatedAt'] !== 'number') return false;
+  if (nowMs - (f['generatedAt'] as number) > MAX_FEED_AGE_MS) return false;
   if (typeof f['source'] !== 'string') return false;
   if (!VALID_JURISDICTIONS.has(f['jurisdiction'] as string)) return false;
   if (!Array.isArray(f['reports'])) return false;

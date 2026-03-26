@@ -35,6 +35,7 @@ export interface Translations {
     readonly rights: string;
     readonly evidence: string;
     readonly settings: string;
+    readonly history: string;
   };
 
   readonly map: {
