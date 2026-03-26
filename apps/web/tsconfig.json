@@ -10,7 +10,8 @@
       "@peopleseyes/core-model": ["../../packages/core-model/src/index.ts"],
       "@peopleseyes/core-logic": ["../../packages/core-logic/src/index.ts"],
       "@peopleseyes/core-i18n": ["../../packages/core-i18n/src/index.ts"],
-      "@peopleseyes/core-crypto": ["../../packages/core-crypto/src/index.ts"]
+      "@peopleseyes/core-crypto": ["../../packages/core-crypto/src/index.ts"],
+      "@cerf/protocol": ["../../packages/cerf-protocol/src/index.ts"]
     }
   },
   "include": ["src/**/*"],

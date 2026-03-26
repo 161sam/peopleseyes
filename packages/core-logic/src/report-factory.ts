@@ -133,5 +133,22 @@ export function validateCellAggregate(
   // Aggregate älter als 2h ablehnen
   if (nowMs - (a['lastUpdatedHour'] as number) > MAX_AGGREGATE_AGE_MS) return false;
 
+  // Optionale CERF-Felder: validieren wenn vorhanden
+  if (a['source'] !== undefined && a['source'] !== 'manual' && a['source'] !== 'external') {
+    return false;
+  }
+  if (
+    a['cerfJurisdiction'] !== undefined &&
+    a['cerfJurisdiction'] !== 'EU' &&
+    a['cerfJurisdiction'] !== 'US' &&
+    a['cerfJurisdiction'] !== 'global'
+  ) return false;
+  if (
+    a['cerfVerifiedBy'] !== undefined &&
+    a['cerfVerifiedBy'] !== null &&
+    a['cerfVerifiedBy'] !== 'community' &&
+    a['cerfVerifiedBy'] !== 'ngo'
+  ) return false;
+
   return true;
 }

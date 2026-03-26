@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { CellAggregate, Report } from '@peopleseyes/core-model';
 import { localReportStore } from '../services/local-report-store.js';
 import { p2pSync } from '../services/p2p-sync.js';
+import { generateCerfFeed } from '../services/cerf-feed-generator.js';
 
 interface UseReportsReturn {
   aggregates: CellAggregate[];
@@ -67,6 +68,16 @@ export function useReports(): UseReportsReturn {
       await localReportStore.addReport(report);
       const updated = await localReportStore.computeAllAggregates();
       setAggregates(updated);
+
+      // CERF-Feed-Cache aktualisieren (für externe Konsumenten via /cerf-feed.json)
+      const feed = generateCerfFeed(updated);
+      if ('caches' in globalThis) {
+        void caches.open('pe:cerf-feed-cache').then(cache =>
+          cache.put('/cerf-feed.json', new Response(JSON.stringify(feed), {
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          })),
+        );
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unbekannter Fehler';
       setError(msg);

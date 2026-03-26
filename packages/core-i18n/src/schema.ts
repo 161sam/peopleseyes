@@ -1,5 +1,27 @@
 import type { AuthorityCategory, ObservedActivityType, ObservationConfidence } from '@peopleseyes/core-model';
 
+export interface SimulationChoice {
+  readonly id: string;
+  readonly text: string;
+  readonly isCorrect: boolean;
+  readonly explanation: string;
+}
+
+export interface SimulationStep {
+  readonly id: string;
+  readonly situation: string;
+  readonly question: string;
+  readonly choices: readonly [SimulationChoice, SimulationChoice, SimulationChoice];
+}
+
+export interface SimulationScenario {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly icon: string;
+  readonly steps: readonly SimulationStep[];
+}
+
 /** Vollständiges Schema aller übersetzbaren Strings */
 export interface Translations {
   readonly app: {
@@ -23,6 +45,19 @@ export interface Translations {
     readonly reportHere: string;
     readonly lastUpdated: string;
     readonly reportsInArea: string;
+    readonly reportNow: string;
+    readonly quickReportTitle: string;
+    readonly quickReportSubtitle: string;
+    readonly quickReportSuccess: string;
+    readonly detailedReport: string;
+    readonly externalLayer: string;
+    readonly externalLayerHint: string;
+    readonly externalSource: string;
+    readonly externalSourceWarning: string;
+    readonly ngoVerified: string;
+    readonly communityVerified: string;
+    readonly unverified: string;
+    readonly noExternalSources: string;
   };
 
   readonly report: {
@@ -102,6 +137,23 @@ export interface Translations {
     readonly storageWarning: string;
   };
 
+  readonly simulations: {
+    readonly title: string;
+    readonly subtitle: string;
+    readonly resultCorrect: string;
+    readonly resultIncorrect: string;
+    readonly resultExplanation: string;
+    readonly nextStep: string;
+    readonly restart: string;
+    readonly finish: string;
+    readonly scenarios: {
+      readonly identityCheck: SimulationScenario;
+      readonly houseSearch: SimulationScenario;
+      readonly arrest: SimulationScenario;
+      readonly vehicleStop: SimulationScenario;
+    };
+  };
+
   readonly settings: {
     readonly title: string;
     readonly language: string;
@@ -114,6 +166,42 @@ export interface Translations {
     readonly about: string;
     readonly sourceCode: string;
     readonly legalNotice: string;
+    readonly dataProtection: string;
+    readonly pinChange: string;
+    readonly pinChangeStep1: string;
+    readonly pinChangeStep2: string;
+    readonly pinChangeStep3: string;
+    readonly pinChangeSuccess: string;
+    readonly pinChangeError: string;
+    readonly pinChangeMismatch: string;
+    readonly pinChangeWorking: string;
+    readonly deleteAllData: string;
+    readonly emergencyContacts: string;
+    readonly emergencyContactsHint: string;
+    readonly emergencyContactName: string;
+    readonly emergencyContactPhone: string;
+    readonly emergencyContactAdd: string;
+    readonly emergencyContactRemove: string;
+    readonly emergencyMessage: string;
+    readonly emergencyMessageHint: string;
+    readonly emergencyAlertSending: string;
+    readonly aiAssistantKey: string;
+    readonly aiAssistantKeyHint: string;
+    readonly aiAssistantKeyPlaceholder: string;
+    readonly aiAssistantKeySave: string;
+    readonly aiAssistantKeyDelete: string;
+    readonly aiAssistantKeyLink: string;
+  };
+
+  readonly legalChat: {
+    readonly title: string;
+    readonly disclaimer: string;
+    readonly placeholder: string;
+    readonly noKey: string;
+    readonly noKeyHint: string;
+    readonly errorInvalidKey: string;
+    readonly errorRateLimit: string;
+    readonly errorNetwork: string;
   };
 
   readonly errors: {

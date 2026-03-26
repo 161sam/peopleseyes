@@ -91,6 +91,24 @@ export interface CellAggregate {
    * Rein lokal/clientseitig – kein Server-Wert.
    */
   readonly aggregateScore: number;
+  /**
+   * Datenquelle dieses Aggregats.
+   * 'manual'   → direkte Nutzer-Meldung (Standard, wenn nicht gesetzt)
+   * 'external' → aus einem externen CERF-Feed importiert
+   */
+  readonly source?: 'manual' | 'external';
+
+  /**
+   * CERF-Jurisdiktion wenn source === 'external'.
+   * Wird für Layer-Unterscheidung auf der Karte genutzt.
+   */
+  readonly cerfJurisdiction?: 'EU' | 'US' | 'global';
+
+  /**
+   * Verifikationsstatus wenn source === 'external'.
+   */
+  readonly cerfVerifiedBy?: null | 'community' | 'ngo';
+
   /** Optionale ECDSA-Signatur für P2P-Integrität */
   readonly signature?: string;
   /** Öffentlicher Schlüssel des signierenden Peers */

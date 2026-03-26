@@ -426,6 +426,37 @@ describe('validateCellAggregate', () => {
   it('lehnt leere cellId ab', () => {
     expect(validateCellAggregate({ ...validAgg, cellId: '' }, NOW)).toBe(false);
   });
+
+  it('akzeptiert source: "external" mit gültigem cerfJurisdiction', () => {
+    expect(validateCellAggregate(
+      { ...validAgg, source: 'external', cerfJurisdiction: 'US' }, NOW,
+    )).toBe(true);
+  });
+
+  it('lehnt ungültige source-Werte ab', () => {
+    expect(validateCellAggregate({ ...validAgg, source: 'invalid_value' }, NOW)).toBe(false);
+  });
+
+  it('akzeptiert fehlendes source-Feld (backward compatibility)', () => {
+    const { ...aggWithoutSource } = validAgg;
+    expect(validateCellAggregate(aggWithoutSource, NOW)).toBe(true);
+  });
+
+  it('akzeptiert cerfVerifiedBy: ngo', () => {
+    expect(validateCellAggregate(
+      { ...validAgg, source: 'external', cerfVerifiedBy: 'ngo' }, NOW,
+    )).toBe(true);
+  });
+
+  it('akzeptiert cerfVerifiedBy: community', () => {
+    expect(validateCellAggregate(
+      { ...validAgg, source: 'external', cerfVerifiedBy: 'community' }, NOW,
+    )).toBe(true);
+  });
+
+  it('lehnt ungültigen cerfVerifiedBy-Wert ab', () => {
+    expect(validateCellAggregate({ ...validAgg, cerfVerifiedBy: 'fake_authority' }, NOW)).toBe(false);
+  });
 });
 
 // ─── abuse.ts ────────────────────────────────────────────────────────────────

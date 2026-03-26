@@ -40,6 +40,7 @@ export default defineConfig({
       '@peopleseyes/core-logic': resolve(rootDir, '../../packages/core-logic/src/index.ts'),
       '@peopleseyes/core-i18n': resolve(rootDir, '../../packages/core-i18n/src/index.ts'),
       '@peopleseyes/core-crypto': resolve(rootDir, '../../packages/core-crypto/src/index.ts'),
+      '@cerf/protocol': resolve(rootDir, '../../packages/cerf-protocol/src/index.ts'),
     },
   },
   // GUN benötigt Node-Polyfills im Browser

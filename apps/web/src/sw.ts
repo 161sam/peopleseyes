@@ -45,3 +45,23 @@ self.addEventListener('sync', event => {
 self.addEventListener('push', event => {
   console.debug('[SW] Push-Event empfangen (nicht verarbeitet):', event);
 });
+
+// CERF-Feed Route — liefert den von der App gecachten Feed aus
+type FetchLikeEvent = ExtendableEvent & { request: Request; respondWith(r: Promise<Response> | Response): void };
+
+self.addEventListener('fetch', event => {
+  const fetchEvent = event as FetchLikeEvent;
+  const url = new URL(fetchEvent.request.url);
+  if (url.pathname !== '/cerf-feed.json') return;
+
+  fetchEvent.respondWith(
+    caches.open('pe:cerf-feed-cache').then(cache =>
+      cache.match('/cerf-feed.json').then(cached => {
+        if (cached) return cached;
+        return new Response(JSON.stringify({ error: 'Feed not yet generated' }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    ),
+  );
+});

@@ -20,6 +20,7 @@
     { "path": "./packages/core-model" },
     { "path": "./packages/core-logic" },
     { "path": "./packages/core-i18n" },
-    { "path": "./packages/core-crypto" }
+    { "path": "./packages/core-crypto" },
+    { "path": "./packages/cerf-protocol" }
   ]
 }
